@@ -12472,7 +12472,6 @@ void PrimaryLogPG::_applied_recovered_object(ObjectContextRef obc)
   // requeue an active chunky scrub waiting on recovery ops
   if (!recovery_state.is_deleting() && active_pushes == 0 &&
       is_scrub_active()) {
-
     osd->queue_scrub_pushes_update(this, is_scrub_blocking_ops());
   }
 }
