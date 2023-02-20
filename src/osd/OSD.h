@@ -541,9 +541,9 @@ public:
                               uint64_t cost,
 			      int priority);
   void queue_for_snap_trim(PG *pg);
-  void queue_for_scrub(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_for_scrub(PG* pg, Scrub::scrub_prio_t with_priority, uint64_t cost_per_object);
 
-  void queue_scrub_after_repair(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_scrub_after_repair(PG* pg, Scrub::scrub_prio_t with_priority, uint64_t cost_per_object);
 
   /// queue the message (-> event) that all replicas have reserved scrub resources for us
   void queue_for_scrub_granted(PG* pg, Scrub::scrub_prio_t with_priority);
@@ -553,7 +553,7 @@ public:
 
   /// Signals either (a) the end of a sleep period, or (b) a recheck of the availability
   /// of the primary map being created by the backend.
-  void queue_for_scrub_resched(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_for_scrub_resched(PG* pg, Scrub::scrub_prio_t with_priority, uint64_t cost_per_object);
 
   /// Signals a change in the number of in-flight recovery writes
   void queue_scrub_pushes_update(PG* pg, Scrub::scrub_prio_t with_priority);
@@ -586,7 +586,8 @@ public:
   void queue_scrub_is_finished(PG* pg);
 
   /// Signals that there are more chunks to handle
-  void queue_scrub_next_chunk(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_scrub_next_chunk(PG* pg, Scrub::scrub_prio_t with_priority,
+                              uint64_t cost_per_object);
 
   /// Signals that we have finished comparing the maps for this chunk
   /// Note: required, as in Crimson this operation is 'futurized'.
@@ -595,7 +596,8 @@ public:
   void queue_for_rep_scrub(PG* pg,
 			   Scrub::scrub_prio_t with_high_priority,
 			   unsigned int qu_priority,
-			   Scrub::act_token_t act_token);
+			   Scrub::act_token_t act_token,
+         uint64_t cost_per_object);
 
   /// Signals a change in the number of in-flight recovery writes
   void queue_scrub_replica_pushes(PG *pg, Scrub::scrub_prio_t with_priority);
@@ -606,7 +608,8 @@ public:
   void queue_for_rep_scrub_resched(PG* pg,
 				   Scrub::scrub_prio_t with_high_priority,
 				   unsigned int qu_priority,
-				   Scrub::act_token_t act_token);
+				   Scrub::act_token_t act_token,
+           uint64_t cost_per_object);
 
   void queue_for_pg_delete(spg_t pgid, epoch_t e);
   bool try_finish_pg_delete(PG *pg, unsigned old_pg_num);
@@ -628,12 +631,14 @@ private:
   void queue_scrub_event_msg(PG* pg,
 			     Scrub::scrub_prio_t with_priority,
 			     unsigned int qu_priority,
-			     Scrub::act_token_t act_token);
+			     Scrub::act_token_t act_token,
+           uint64_t cost_per_object);
 
   /// An alternative version of queue_scrub_event_msg(), in which the queuing priority is
   /// provided by the executing scrub (i.e. taken from PgScrubber::m_flags)
   template <class MSG_TYPE>
-  void queue_scrub_event_msg(PG* pg, Scrub::scrub_prio_t with_priority);
+  void queue_scrub_event_msg(PG* pg, Scrub::scrub_prio_t with_priority,
+                             uint64_t cost_per_object);
 
   utime_t defer_recovery_until;
   uint64_t recovery_ops_active;

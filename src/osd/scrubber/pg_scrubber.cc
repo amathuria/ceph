@@ -814,7 +814,8 @@ void PgScrubber::add_delayed_scheduling()
 	<< ceph_clock_now() - scrbr->m_sleep_started_at << ", re-queuing scrub" << dendl;
 
       scrbr->m_sleep_started_at = utime_t{};
-      osds->queue_for_scrub_resched(&(*pg), Scrub::scrub_prio_t::low_priority);
+      auto cost = pg->get_scrub_cost();
+      osds->queue_for_scrub_resched(&(*pg), Scrub::scrub_prio_t::low_priority, cost);
       pg->unlock();
     });
 
@@ -823,7 +824,8 @@ void PgScrubber::add_delayed_scheduling()
 
   } else {
     // just a requeue
-    m_osds->queue_for_scrub_resched(m_pg, Scrub::scrub_prio_t::high_priority);
+    uint64_t cost = 1;
+    m_osds->queue_for_scrub_resched(m_pg, Scrub::scrub_prio_t::high_priority, cost);
   }
 }
 
@@ -1085,7 +1087,8 @@ int PgScrubber::build_primary_map_chunk()
 
   if (ret == -EINPROGRESS) {
     // reschedule another round of asking the backend to collect the scrub data
-    m_osds->queue_for_scrub_resched(m_pg, Scrub::scrub_prio_t::low_priority);
+    auto cost = m_pg->get_scrub_cost();
+    m_osds->queue_for_scrub_resched(m_pg, Scrub::scrub_prio_t::low_priority, cost);
   }
   return ret;
 }
@@ -1101,13 +1104,17 @@ int PgScrubber::build_replica_map_chunk()
 
   switch (ret) {
 
-    case -EINPROGRESS:
+    case -EINPROGRESS: {
       // must wait for the backend to finish. No external event source.
-      // (note: previous version used low priority here. Now switched to using the
-      // priority of the original message)
-      m_osds->queue_for_rep_scrub_resched(m_pg, m_replica_request_priority,
-					  m_flags.priority, m_current_token);
-      break;
+      // (note: previous version used low priority here. Now switched to using
+      // the priority of the original message)
+      auto cost = m_pg->get_scrub_cost();
+      m_osds->queue_for_rep_scrub_resched(m_pg,
+					  m_replica_request_priority,
+					  m_flags.priority,
+					  m_current_token,
+            cost);
+    } break;
 
     case 0: {
       // finished!
@@ -1318,11 +1325,14 @@ void PgScrubber::replica_scrub_op(OpRequestRef op)
   preemption_data.reset();
   preemption_data.force_preemptability(msg->allow_preemption);
 
-  replica_scrubmap_pos.reset();
-
+  replica_scrubmap_pos.reset();	 // needed? RRR
+  auto cost = m_pg->get_scrub_cost();
   set_queued_or_active();
-  m_osds->queue_for_rep_scrub(m_pg, m_replica_request_priority,
-                              m_flags.priority, m_current_token);
+  m_osds->queue_for_rep_scrub(m_pg,
+			      m_replica_request_priority,
+			      m_flags.priority,
+			      m_current_token,
+            cost);
 }
 
 void PgScrubber::set_op_parameters(requested_scrub_t& request)
@@ -1941,7 +1951,8 @@ void PgScrubber::on_digest_updates()
   } else {
     // go get a new chunk (via "requeue")
     preemption_data.reset();
-    m_osds->queue_scrub_next_chunk(m_pg, m_pg->is_scrub_blocking_ops());
+    auto cost = m_pg->get_scrub_cost();
+    m_osds->queue_scrub_next_chunk(m_pg, m_pg->is_scrub_blocking_ops(), cost);
   }
 }
 

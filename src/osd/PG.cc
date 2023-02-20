@@ -452,8 +452,8 @@ void PG::queue_scrub_after_repair()
 
   m_scrubber->set_op_parameters(m_planned_scrub);
   dout(15) << __func__ << ": queueing" << dendl;
-
-  osd->queue_scrub_after_repair(this, Scrub::scrub_prio_t::high_priority);
+  auto cost = get_scrub_cost();
+  osd->queue_scrub_after_repair(this, Scrub::scrub_prio_t::high_priority, cost);
 }
 
 unsigned PG::get_scrub_priority()
@@ -462,6 +462,20 @@ unsigned PG::get_scrub_priority()
   int64_t pool_scrub_priority =
     pool.info.opts.value_or(pool_opts_t::SCRUB_PRIORITY, (int64_t)0);
   return pool_scrub_priority > 0 ? pool_scrub_priority : cct->_conf->osd_scrub_priority;
+}
+
+unsigned PG::get_scrub_cost()
+{
+  auto num_bytes = static_cast<uint64_t>(
+    std::max<int64_t>(
+      0, 
+      info.stats.stats.sum.num_bytes));
+  auto num_objects = static_cast<uint64_t>(
+    std::max<int64_t>(
+      1, 
+      info.stats.stats.sum.num_objects));
+  uint64_t cost_per_object = std::max<uint64_t>(num_bytes / num_objects, 1);
+  return cost_per_object;
 }
 
 Context *PG::finish_recovery()
@@ -1389,9 +1403,21 @@ Scrub::schedule_result_t PG::sched_scrub()
   // Pass control to the scrubber. It is the scrubber that handles the replicas'
   // resources reservations.
   m_scrubber->set_op_parameters(m_planned_scrub);
-
+ 
+  /*
+  auto num_bytes = static_cast<uint64_t>(
+    std::max<int64_t>(
+      0, 
+      info.stats.stats.sum.num_bytes));
+  auto num_objects = static_cast<uint64_t>(
+    std::max<int64_t>(
+      1, 
+      info.stats.stats.sum.num_objects));
+  uint64_t cost_per_object = std::max<uint64_t>(num_bytes / num_objects, 1);
+  */
+  auto cost = get_scrub_cost();
   dout(10) << __func__ << ": queueing" << dendl;
-  osd->queue_for_scrub(this, Scrub::scrub_prio_t::low_priority);
+  osd->queue_for_scrub(this, Scrub::scrub_prio_t::low_priority, cost);
   return schedule_result_t::scrub_initiated;
 }
 
