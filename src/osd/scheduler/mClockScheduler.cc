@@ -244,8 +244,8 @@ void mClockScheduler::set_config_defaults_from_profile()
    */
   static constexpr profile_t high_client_ops_profile{
     { .6, 5, 0 },
-    { .2, 1, .5},
-    { .2, 1, 0 }
+    { .4, 1, 0},
+    { 0, 1, .7}
   };
 
   /**
@@ -259,8 +259,8 @@ void mClockScheduler::set_config_defaults_from_profile()
    *   reservation: 0 (min) | weight: 1 | limit: 0 (max) |
    */
   static constexpr profile_t high_recovery_ops_profile{
-    { .3, 1, .8 },
-    { .6, 2, 0 },
+    { .3, 1, 0 },
+    { .7, 2, 0 },
     { 0, 1, 0 }
   };
 
@@ -275,9 +275,9 @@ void mClockScheduler::set_config_defaults_from_profile()
    *   reservation: 20% | weight: 1 | limit: 0 (max) |
    */
   static constexpr profile_t balanced_profile{
-    { .4, 1, 1.0 },
-    { .4, 1, .7 },
-    { .2, 1, 0 }
+    { .5, 1, 0 },
+    { .5, 1, 0 },
+    { 0, 1, .9 }
   };
 
   const profile_t *profile = nullptr;
