@@ -2,7 +2,9 @@ overrides:
   ceph:
     conf:
       osd:
-        osd op queue: debug_random
+        debug mclock: 30
+        debug osd: 30
+        osd op queue: mclock_scheduler
         osd op queue cut off: debug_random
         osd debug verify missing on start: true
         osd debug verify cached snaps: true
