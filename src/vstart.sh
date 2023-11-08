@@ -1121,11 +1121,14 @@ EOF
     # start monitors
     for f in $MONS
     do
+        debug echo starting MON
         run 'mon' $f $CEPH_BIN/ceph-mon -i $f $ARGS $CMON_ARGS
+        debug echo DONE
     done
 
     if [ "$crimson" -eq 1 ]; then
-        $CEPH_BIN/ceph osd set-allow-crimson --yes-i-really-mean-it
+        debug echo crimson set allow
+        $CEPH_BIN/ceph osd set-allow-crimson --yes-i-really-mean-it --keyring="$keyring_fn" -c "$conf_fn"
     fi
 
     if [ -n "$require_osd_and_client_version" ]; then
@@ -1139,6 +1142,7 @@ EOF
 }
 
 start_osd() {
+    debug echo starting OSD...
     if [ $inc_osd_num -gt 0 ]; then
         old_maxosd=$($CEPH_BIN/ceph osd getmaxosd | sed -e 's/max_osd = //' -e 's/ in epoch.*//')
         start=$old_maxosd

@@ -573,7 +573,7 @@ public:
   void identify_splits(
     OSDMapRef old_map,
     OSDMapRef new_map,
-    const pg_t pgid,
+    spg_t pgid,
     std::set<std::pair<spg_t,epoch_t>> *new_children);
   // OSDMapService
   cached_map_t get_map() const final { return local_state.get_osdmap(); }
