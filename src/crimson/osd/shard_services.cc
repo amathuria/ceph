@@ -101,7 +101,7 @@ seastar::future<> PerShardState::broadcast_map_to_pgs(
       //const std::set<std::pair<spg_t,epoch_t>>* temp_children = &new_children;
       std::set<std::pair<spg_t,epoch_t>> new_children;
       shard_services.identify_splits(pg.second->get_osdmap(), get_osdmap(), 
-                                     pg.first.pgid, &new_children);
+                                     pg.first, &new_children);
       return shard_services.start_operation<PGAdvanceMap>(
 	pg.second,
 	shard_services,
@@ -878,8 +878,8 @@ seastar::future<MURef<MOSDMap>> OSDSingletonState::build_incremental_map_msg(
 void ShardServices::identify_splits(
     OSDMapRef old_map,
     OSDMapRef new_map,
-    const pg_t pgid,
-    std::set<std::pair<spg_t,epoch_t>> *new_children)
+    spg_t pgid,
+    std::set<std::pair<spg_t,epoch_t>> *split_children)
 {
   logger().info("{} {} e {} to {}", __func__, pgid, old_map->get_epoch(), new_map->get_epoch());
   if (!old_map->have_pg_pool(pgid.pool())) {
@@ -893,6 +893,47 @@ void ShardServices::identify_splits(
 
   int new_pgnum = new_map->get_pg_num(pgid.pool());
   logger().info("New number of PGs: {}", new_pgnum);
+
+  // check if pool has history in pg_num_history
+  auto new_epoch = new_map->get_epoch();
+  logger().info("{} {} e {} to e {} pg_nums {}",
+      __func__, pgid, old_map->get_epoch(), new_map->get_epoch(), new_pgnum);
+  std::deque<spg_t> queue;
+  queue.push_back(pgid);
+  std::set<spg_t> did;
+  while (!queue.empty()) {
+    auto cur = queue.front();
+    queue.pop_front();
+    did.insert(cur);
+    unsigned pgnum = old_pgnum;
+    if ((int)pgnum < new_pgnum) {
+      // splitting
+      if (cur.ps() < pgnum) {
+        // We check all old pgs for children 
+        std::set<spg_t> children;
+        logger().info("{} CUR PS: {} PGNUM: {}", __func__, cur.ps(), pgnum);
+        if (cur.is_split(pgnum, new_pgnum,  &children)) {
+          logger().info("{}  pg_num: {} -> {}", __func__, pgnum, new_pgnum);
+          logger().info("{} number of children: {}", __func__, children.size());
+          for (auto i: children) {
+            logger().info("{} into split children: {} {} ", __func__, i.pgid, new_epoch);
+            split_children->insert(std::make_pair(i, new_epoch));
+            if (!did.count(i)) {
+              queue.push_back(i);
+            }
+          }
+        }
+      } else if (cur.ps() < new_pgnum) {
+        logger().info("{} cur ps {}", __func__, cur.ps());
+        logger().info("{} pg_num: {} -> {} is a child", __func__, pgnum, new_pgnum);
+        logger().info("{} into split children: {} {} ", __func__, cur.pgid, new_epoch);
+        split_children->insert(std::make_pair(cur, new_epoch));
+      } else {
+        logger().info("{} in ELSE", __func__);
+      }
+    }
+  }
+
 }
 
 seastar::future<> OSDSingletonState::send_incremental_map(
