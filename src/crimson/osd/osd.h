@@ -175,6 +175,8 @@ public:
   auto &get_shard_services() {
     return shard_services.local();
   }
+//protected:
+//  pool_pg_num_history_t pg_num_history;
 
 private:
   static seastar::future<> _write_superblock(

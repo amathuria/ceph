@@ -569,7 +569,12 @@ public:
   unsigned get_num_local_pgs() const {
     return local_state.pg_map.get_pg_count();
   }
-
+  /// identify split child pgids over a osdmap interval
+  void identify_splits(
+    OSDMapRef old_map,
+    OSDMapRef new_map,
+    const pg_t pgid,
+    std::set<std::pair<spg_t,epoch_t>> *new_children);
   // OSDMapService
   cached_map_t get_map() const final { return local_state.get_osdmap(); }
   epoch_t get_up_epoch() const final { return local_state.up_epoch; }

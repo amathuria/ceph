@@ -1099,6 +1099,22 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
         superblock.mounted = boot_epoch;
         superblock.clean_thru = last;
       }
+      /*
+      std::map<epoch_t,OSDMapRef> added_maps;
+      for (epoch_t e = first; e <= last; e++) {
+        std::map<epoch_t,bufferlist>::iterator p;
+        p = m->maps.find(e);
+        if (p != m->maps.end()) {
+          logger().debug("handle_osd_map got full map for epoch {}", e);
+          OSDMap *o = new OSDMap;
+          bufferlist& bl = p->second;
+        }
+        o->decode(bl);
+        added_maps[e] = add_map(o);
+        got_full_map(e);
+        continue;
+      }
+      */
       pg_shard_manager.get_meta_coll().store_superblock(t, superblock);
       return pg_shard_manager.set_superblock(superblock).then(
       [FNAME, this, &t] {
