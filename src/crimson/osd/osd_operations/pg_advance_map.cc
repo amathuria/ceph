@@ -93,10 +93,23 @@ seastar::future<> PGAdvanceMap::start()
 	boost::make_counting_iterator(*from + 1),
 	boost::make_counting_iterator(to + 1),
 	[this](epoch_t next_epoch) {
+    OSDMapRef last_map = pg->get_osdmap();
+    unsigned old_pg_num;
+    if (last_map->have_pg_pool(pg->get_pgid().pool())) {
+      old_pg_num = last_map->get_pg_num(pg->get_pgid().pool());
+    }
 	  logger().debug("{}: start: getting map {}",
 	                 *this, next_epoch);
 	  return shard_services.get_map(next_epoch).then(
-	    [this] (cached_map_t&& next_map) {
+	    [this, old_pg_num, last_map] (cached_map_t&& next_map) {
+        unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
+        if (new_pg_num && old_pg_num != new_pg_num) {
+          std::set<spg_t> children;
+          std::set<Ref<PG>> new_pgs;
+          if (pg->get_pgid().is_split(old_pg_num, new_pg_num, &children)){
+            shard_services.split_pgs(pg.get(), children, &new_pgs, last_map, next_map, rctx);
+          }
+        }
 	      logger().debug("{}: advancing map to {}",
 			     *this, next_map->get_epoch());
 	      return pg->handle_advance_map(next_map, rctx);
