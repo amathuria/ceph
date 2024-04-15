@@ -124,6 +124,16 @@ class PerShardState {
   seastar::future<> broadcast_map_to_pgs(
     ShardServices &shard_services,
     epoch_t epoch);
+  
+  seastar::future<> identify_splits(
+    ShardServices &shard_services,
+    epoch_t epoch,
+    std::set<std::pair<spg_t,epoch_t>> *split_pgs);
+  
+  seastar::future<> prime_splits(
+    ShardServices &shard_services,
+    epoch_t epoch,
+    std::set<std::pair<spg_t,epoch_t>> pgids);
 
   Ref<PG> get_pg(spg_t pgid);
   template <typename F>
@@ -570,7 +580,7 @@ public:
     return local_state.pg_map.get_pg_count();
   }
   /// identify split child pgids over a osdmap interval
-  void identify_splits(
+  seastar::future<std::set<std::pair<spg_t,epoch_t>>> identify_splits(
     OSDMapRef old_map,
     OSDMapRef new_map,
     spg_t pgid,
@@ -590,6 +600,13 @@ public:
 	return make_local_shared_foreign(std::move(fmap));
       });
   }
+
+void split_pgs(PG *parent,
+              const std::set<spg_t> &childpgids,
+              std::set<Ref<PG>> *out_pgs,
+              OSDMapRef curmap,
+              OSDMapRef nextmap,
+              PeeringCtx &rctx);
 
   FORWARD_TO_OSD_SINGLETON(get_pool_info)
   FORWARD(with_throttle_while, with_throttle_while, local_state.throttler)

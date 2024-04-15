@@ -75,6 +75,9 @@ public:
   );
   void got_map(epoch_t epoch);
   seastar::future<> stop();
+
+  // waiting for split in these epochs
+  std::set<epoch_t> waiting_for_split;
 };
 
 using OSD_OSDMapGate = OSDMapGate<OSDMapGateType::OSD>;
