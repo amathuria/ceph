@@ -331,7 +331,7 @@ private:
                     epoch_t e, bufferlist&& bl);
   void store_inc_map_bl(ceph::os::Transaction& t,
                     epoch_t e, bufferlist&& bl);
-  seastar::future<> store_maps(ceph::os::Transaction& t,
+  seastar::future<std::map<epoch_t, local_cached_map_t>> store_maps(ceph::os::Transaction& t,
                                epoch_t start, Ref<MOSDMap> m);
   void trim_maps(ceph::os::Transaction& t, OSDSuperblock& superblock);
 };

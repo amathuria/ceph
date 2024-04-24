@@ -109,6 +109,8 @@ class OSD final : public crimson::net::Dispatcher,
   epoch_t min_last_epoch_clean = 0;
   // which pgs were scanned for min_lec
   std::vector<pg_t> min_last_epoch_clean_pgs;
+
+  pool_pg_num_history_t pg_num_history;
   void update_stats();
   seastar::future<MessageURef> get_stats() final;
 
@@ -217,6 +219,8 @@ private:
   seastar::future<> handle_mark_me_down(crimson::net::ConnectionRef conn,
                                         Ref<MOSDMarkMeDown> m);
 
+  seastar::future<> track_pools_and_pg_num_changes(const std::map<epoch_t, local_cached_map_t>& added_maps,
+                                                   ceph::os::Transaction& t);
   seastar::future<> committed_osd_maps(version_t first,
                                        version_t last,
                                        Ref<MOSDMap> m);

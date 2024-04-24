@@ -1025,7 +1025,7 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
     WARN("i am still initializing");
     return seastar::now();
   }
-
+  std::map<epoch_t, OSDMapRef> added_maps;
   const auto first = m->get_first();
   const auto last = m->get_last();
   INFO(" epochs [{}..{}], i have {}, src has [{}..{}]",
@@ -1066,14 +1066,16 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
 
   return seastar::do_with(ceph::os::Transaction{},
                           [=, this](auto& t) {
-    return pg_shard_manager.store_maps(t, start, m).then([=, this, &t] {
+    return pg_shard_manager.store_maps(t, start, m).then([=, this, &t] (
+      std::map<epoch_t, local_cached_map_t> added_maps
+    ) {
       // even if this map isn't from a mon, we may have satisfied our subscription
       monc->sub_got("osdmap", last);
-
+      track_pools_and_pg_num_changes(added_maps, t);
       if (!superblock.maps.empty()) {
         pg_shard_manager.trim_maps(t, superblock);
         // TODO: once we support pg splitting, update pg_num_history here
-        //pg_num_history.prune(superblock.get_oldest_map());
+        pg_num_history.prune(superblock.get_oldest_map());
       }
 
       superblock.insert_osdmap_epochs(first, last);
@@ -1098,6 +1100,56 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
     return committed_osd_maps(start, last, m);
   });
 }
+
+
+seastar::future<> OSD::track_pools_and_pg_num_changes(
+  const std::map<epoch_t, local_cached_map_t>& added_maps,
+  ceph::os::Transaction& t
+)
+{
+  LOG_PREFIX(OSD::track_pools_and_pg_num_changes);
+  
+
+  epoch_t first = added_maps.begin()->first;
+  epoch_t last = added_maps.rbegin()->first;
+
+  INFO("osd.{} ({}, {})", whoami, first, last);
+  local_cached_map_t lastmap;
+  /*
+  return pg_shard_manager.get_local_map(
+    first
+  ).then([this] (OSDMapService::local_cached_map_t&& map) {
+    // Unless this is the first start of the OSD,
+    // lastmap should be the newest_map
+    if (superblock.maps.empty()) {
+      INFO("no maps stored, this is probably the first start of this osd ");
+      lastmap = map; 
+    } else {
+      if (first > superblock.get_newest_map() + 1) {
+        ceph_assert(first == superblock.cluster_osdmap_trim_lower_bound);
+        INFO("can't get previous map {} first start of osd.{} after a map gap",
+             superblock.get_newest_map(), whoami);
+      }
+      if ()
+    }
+  })
+  */
+  if (superblock.maps.empty()) {
+    INFO("no maps stored, this is probably the first start of this osd ");
+    lastmap = added_maps.at(first); 
+  } else {
+    if (first > superblock.get_newest_map() + 1) {
+      ceph_assert(first == superblock.cluster_osdmap_trim_lower_bound);
+      INFO("can't get previous map {} first start of osd.{} after a map gap",
+            superblock.get_newest_map(), whoami);
+      }
+  }
+
+  
+
+
+}
+
 
 seastar::future<> OSD::committed_osd_maps(
   version_t first,
