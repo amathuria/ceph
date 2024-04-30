@@ -106,8 +106,10 @@ seastar::future<> PGAdvanceMap::start()
         if (new_pg_num && old_pg_num != new_pg_num) {
           std::set<spg_t> children;
           std::set<Ref<PG>> new_pgs;
+          logger().debug(" NEW PG NUM: {} OLD PG NUM: {} ", new_pg_num, old_pg_num);
           if (pg->get_pgid().is_split(old_pg_num, new_pg_num, &children)){
-            shard_services.split_pgs(pg.get(), children, &new_pgs, last_map, next_map, rctx);
+            logger().debug(" Split happened!! "); 
+            auto fut = shard_services.split_pgs(pg.get(), children, &new_pgs, last_map, next_map, rctx);
           }
         }
 	      logger().debug("{}: advancing map to {}",
