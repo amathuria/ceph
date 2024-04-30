@@ -131,9 +131,10 @@ seastar::future<> PerShardState::prime_splits(
   INFO("Size of children set: {}", pgids.size());
   auto p = pgids.begin();
   while (p != pgids.end()) {
-    INFO("PG ID: {}", p->first.pgid);
+    INFO("PG ID: {} EPOCH: {}", p->first.pgid, p->second);
     //shard_services.local_state.osdmap_gate.waiting_for_split.insert(p->second);
     osdmap_gate.waiting_for_split.insert(p->second);
+    p = pgids.erase(p);
   }
   return seastar::now();
 }
@@ -817,7 +818,7 @@ seastar::future<> ShardServices::dispatch_context_transaction(
 seastar::future<> ShardServices::dispatch_context_messages(
   BufferedRecoveryMessages &&ctx)
 {
-  LOG_PREFIX(OSDSingletonState::dispatch_context_transaction);
+  LOG_PREFIX(OSDSingletonState::_transaction);
   auto ret = seastar::parallel_for_each(std::move(ctx.message_map),
     [FNAME, this](auto& osd_messages) {
       auto& [peer, messages] = osd_messages;
@@ -845,9 +846,9 @@ seastar::future<> ShardServices::dispatch_context(
   });
 }
 
-void ShardServices::split_pgs(PG *parent,
+seastar::future<std::set<Ref<PG>>> ShardServices::split_pgs(Ref<PG> parent,
                                 const std::set<spg_t> &childpgids,
-                                std::set<Ref<PG>> *out_pgs,
+                                //std::set<Ref<PG>> *out_pgs,
                                 OSDMapRef curmap,
                                 OSDMapRef nextmap,
                                 PeeringCtx &rctx) 
@@ -856,22 +857,49 @@ void ShardServices::split_pgs(PG *parent,
   DEBUG("getting pg_num...");
   unsigned pg_num = nextmap->get_pg_num(parent->get_pgid().pool());
   DEBUG("PG NUM: {}", pg_num);
-  /*
+  std::set<Ref<PG>> out_pgs;
+  
   return seastar::do_with(parent, 
                           childpgids,
-                          out_pgs,
-                          curmap,
                           nextmap,
-                          rctx, [this] (PG &parent,
-                                        const std::set<spg_t> &childpgids,
-                                        std::set<PGRef> &out_pgs,
-                                        OSDMapRef &curmap,
-                                        OSDMapRef &nextmap,
-                                        PeeringCtx &rctx) {
-  return seastar::do_for_each(childpgids, [this, &parent, &out_pgs, &nextmap])  
-                                        })
-  */
-  
+                          pg_num,
+                          out_pgs, [this, &rctx] (auto &parent,
+                                        /*const std::set<spg_t>*/ auto &childpgids,
+                                                              auto &nextmap,
+                                                              auto &pg_num,
+                                        /*std::set<Ref<PG>>*/ auto &out_pgs) {
+  return seastar::do_for_each(childpgids, [this, &parent, &out_pgs, &nextmap, &rctx, &pg_num]
+  (auto& child) {
+    LOG_PREFIX(ShardServices::split_pgs);
+    DEBUG(" before make PG: {} ", child.pgid);
+    return make_pg(std::move(nextmap), child, true).then([this, &parent, &out_pgs, &nextmap, &rctx, &pg_num](
+    Ref<PG> child_pg) {
+        LOG_PREFIX(ShardServices::split_pgs);
+        DEBUG(" in THEN of split_pgs");
+        DEBUG(" parent ID: {}", parent->get_pgid());
+        DEBUG(" child ID: {} ", child_pg->get_pgid());
+
+        const coll_t cid{child_pg->get_pgid()};
+        DEBUG(" before PG num");
+        //child_pg->coll_ref = get_store().create_new_collection(cid);
+        //unsigned pg_num = nextmap->get_pg_num(parent->get_pgid().pool());
+        DEBUG(" pg num: {}", pg_num);
+        unsigned split_bits = child_pg->get_pgid().get_split_bits(pg_num);
+        DEBUG(" got split bits");
+        parent->split_colls(child_pg->get_pgid(), split_bits, child_pg->get_pgid().ps(), 
+                           &child_pg->get_pgpool().info, rctx.transaction);
+        DEBUG(" split collection done");
+        parent->split_into(child_pg->get_pgid().pgid, child_pg, split_bits);
+        DEBUG(" split into done");
+        out_pgs.insert(child_pg);
+        DEBUG(" insert into out_pgs done");
+    });
+  }).then([this, &out_pgs] {
+    LOG_PREFIX(ShardServices::split_pgs);
+    DEBUG(" before return");
+    return seastar::make_ready_future<std::set<Ref<PG>>>(std::move(out_pgs));
+  });
+ });
 }
 
 seastar::future<MURef<MOSDMap>> OSDSingletonState::build_incremental_map_msg(
@@ -948,7 +976,7 @@ seastar::future<std::set<std::pair<spg_t,epoch_t>>> ShardServices::identify_spli
   int old_pgnum = old_map->get_pg_num(pgid.pool());
   //seastar::logger().info("Old number of PGs: {}", old_pgnum);
 
-  int new_pgnum = new_map->get_pg_num(pgid.pool());
+  unsigned new_pgnum = new_map->get_pg_num(pgid.pool());
   //seastar::logger().info("New number of PGs: {}", new_pgnum);
 
   // check if pool has history in pg_num_history

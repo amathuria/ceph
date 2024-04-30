@@ -589,6 +589,11 @@ public:
     init_pg_ondisk(t, child, pool);
   }
 
+  void split_into(pg_t child_pgid, Ref<PG> child, unsigned split_bits) {
+    peering_state.split_into(child_pgid, &child->peering_state, split_bits);
+    child->snap_trimq = snap_trimq;
+  }
+
   static hobject_t get_oid(const hobject_t& hobj);
   static RWState::State get_lock_type(const OpInfo &op_info);
 

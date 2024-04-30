@@ -601,9 +601,9 @@ public:
       });
   }
 
-void split_pgs(PG *parent,
+  seastar::future<std::set<Ref<PG>>> split_pgs(Ref<PG> parent,
               const std::set<spg_t> &childpgids,
-              std::set<Ref<PG>> *out_pgs,
+              //std::set<Ref<PG>> *out_pgs,
               OSDMapRef curmap,
               OSDMapRef nextmap,
               PeeringCtx &rctx);
