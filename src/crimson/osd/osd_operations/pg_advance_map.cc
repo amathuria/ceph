@@ -89,6 +89,7 @@ seastar::future<> PGAdvanceMap::start()
     }
     return fut.then([this] {
       ceph_assert(std::cmp_less_equal(*from, to));
+      //return seastar::do_with 
       return seastar::do_for_each(
 	boost::make_counting_iterator(*from + 1),
 	boost::make_counting_iterator(to + 1),
@@ -98,24 +99,37 @@ seastar::future<> PGAdvanceMap::start()
     if (last_map->have_pg_pool(pg->get_pgid().pool())) {
       old_pg_num = last_map->get_pg_num(pg->get_pgid().pool());
     }
+    cached_map_t new_map;
 	  logger().debug("{}: start: getting map {}",
 	                 *this, next_epoch);
 	  return shard_services.get_map(next_epoch).then(
-	    [this, old_pg_num, last_map] (cached_map_t&& next_map) {
-        unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
+	    [this] (cached_map_t&& next_map) mutable {
+        logger().debug("{} advancing map to {}",
+			     *this, next_map->get_epoch());
+        return pg->handle_advance_map(next_map, rctx);
+      }).then([this, next_epoch, old_pg_num, last_map] {
+        return shard_services.get_map(next_epoch).then(
+          [this, old_pg_num, last_map] (cached_map_t&& new_map) {
+        logger().debug("Mat is sending something and all");
+        logger().debug("This new map is okay ah? {}", new_map == nullptr);
+        //logger().debug("what is the pointer? {}", new_map.get());
+        unsigned new_pg_num = new_map->get_pg_num(pg->get_pgid().pool());
         if (new_pg_num && old_pg_num != new_pg_num) {
           std::set<spg_t> children;
-          std::set<Ref<PG>> new_pgs;
           logger().debug(" NEW PG NUM: {} OLD PG NUM: {} ", new_pg_num, old_pg_num);
           if (pg->get_pgid().is_split(old_pg_num, new_pg_num, &children)){
             logger().debug(" Split happened!! "); 
-            auto fut = shard_services.split_pgs(pg.get(), children, &new_pgs, last_map, next_map, rctx);
+            return shard_services.split_pgs(pg/*.get()*/, children, last_map, new_map, rctx).then(
+              [this] (auto &&new_pgs) {
+              if (!new_pgs.empty()) {
+                logger().debug(" new child PGs {}", new_pgs.size());
+              }
+            });
           }
         }
-	      logger().debug("{}: advancing map to {}",
-			     *this, next_map->get_epoch());
-	      return pg->handle_advance_map(next_map, rctx);
-	    });
+        return seastar::now();
+      });
+    });
 	}).then([this] {
 	  return pg->handle_activate_map(rctx).then([this] {
 	    logger().debug("{}: map activated", *this);
