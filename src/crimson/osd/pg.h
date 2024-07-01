@@ -572,7 +572,7 @@ public:
   void handle_activate_map(PeeringCtx &rctx);
   void handle_initialize(PeeringCtx &rctx);
 
-  void split_colls(
+  seastar::future<> split_colls(
     spg_t child,
     int split_bits,
     int seed, 
@@ -580,6 +580,7 @@ public:
     ObjectStore::Transaction &t) {
     coll_t target = coll_t(child);
     create_pg_collection(t, child, split_bits);
+    //init_pg_ondisk(t, child, pool);
     coll_t parent_coll = coll_ref->get_cid();
     t.split_collection(
       parent_coll,
@@ -587,6 +588,10 @@ public:
       seed,
       target);
     init_pg_ondisk(t, child, pool);
+    return shard_services.get_store().do_transaction(
+      coll_ref, std::move(t)); /*.then([this, t=std::move(t), child, pool] () mutable {
+      init_pg_ondisk(t, child, pool);
+    });*/
   }
 
   void split_into(pg_t child_pgid, Ref<PG> child, unsigned split_bits) {
