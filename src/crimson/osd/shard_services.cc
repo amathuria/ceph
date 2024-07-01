@@ -97,7 +97,7 @@ seastar::future<> PerShardState::broadcast_map_to_pgs(
 	pg.second,
 	shard_services,
 	epoch,
-	PeeringCtx{}, false).second;
+	PeeringCtx{}, false, false).second;
     });
 }
 
@@ -134,6 +134,7 @@ seastar::future<> PerShardState::prime_splits(
     INFO("PG ID: {} EPOCH: {}", p->first.pgid, p->second);
     //shard_services.local_state.osdmap_gate.waiting_for_split.insert(p->second);
     osdmap_gate.waiting_for_split.insert(p->second);
+    //local_state.pg_map.set_creating(p->first.pgid);
     p = pgids.erase(p);
   }
   return seastar::now();
@@ -600,8 +601,12 @@ seastar::future<Ref<PG>> ShardServices::make_pg(
 {
   using ec_profile_t = std::map<std::string, std::string>;
   auto get_pool_info_for_pg = [create_map, pgid, this] {
+    LOG_PREFIX(ShardServices::make_pg);
+    DEBUG(" map epoch = {}", create_map->get_epoch());
     if (create_map->have_pg_pool(pgid.pool())) {
+      DEBUG(" YES Map has Pool for {}", pgid);
       pg_pool_t pi = *create_map->get_pg_pool(pgid.pool());
+
       std::string name = create_map->get_pool_name(pgid.pool());
       ec_profile_t ec_profile;
       if (pi.is_erasure()) {
@@ -616,12 +621,16 @@ seastar::future<Ref<PG>> ShardServices::make_pg(
 	    std::move(ec_profile)));
     } else {
       // pool was deleted; grab final pg_pool_t off disk.
+      DEBUG(" Did not find pool in map");
       return get_pool_info(pgid.pool());
     }
   };
   auto get_collection = [pgid, do_create, this] {
+    LOG_PREFIX(ShardServices::make_pg);
+
     const coll_t cid{pgid};
-    if (do_create) { 
+    if (do_create) {
+      DEBUG(" about to create new collection for {}", pgid); 
       return get_store().create_new_collection(cid);
     } else {
       return get_store().open_collection(cid);
@@ -738,7 +747,7 @@ seastar::future<Ref<PG>> ShardServices::handle_pg_create_info(
 	    rctx->transaction
 	  ).then([this, pg=pg, rctx=std::move(rctx)] {
 	    return start_operation<PGAdvanceMap>(
-	      pg, *this, get_map()->get_epoch(), std::move(*rctx), true
+	      pg, *this, get_map()->get_epoch(), std::move(*rctx), true, false
 	    ).second.then([pg=pg] {
 	      return seastar::make_ready_future<Ref<PG>>(pg);
 	    });
@@ -861,7 +870,7 @@ seastar::future<std::set<Ref<PG>>> ShardServices::split_pgs(Ref<PG> parent,
   
   return seastar::do_with(parent, 
                           childpgids,
-                          nextmap,
+                          std::move(nextmap),
                           pg_num,
                           out_pgs, [this, &rctx] (auto &parent,
                                         /*const std::set<spg_t>*/ auto &childpgids,
@@ -870,11 +879,34 @@ seastar::future<std::set<Ref<PG>>> ShardServices::split_pgs(Ref<PG> parent,
                                         /*std::set<Ref<PG>>*/ auto &out_pgs) {
   return seastar::do_for_each(childpgids, [this, &parent, &out_pgs, &nextmap, &rctx, &pg_num]
   (auto& child) {
-    LOG_PREFIX(ShardServices::split_pgs);
-    DEBUG(" before make PG: {} ", child.pgid);
-    return make_pg(std::move(nextmap), child, true).then([this, &parent, &out_pgs, &nextmap, &rctx, &pg_num](
+    
+    return pg_to_shard_mapping.get_or_create_pg_mapping(child).then([this, child] (auto core) {
+      LOG_PREFIX(ShardServices::split_pgs);
+      DEBUG(" PG {} mapped to {}", child.pgid, core);
+      return seastar::now();
+    }).then([this, child, nextmap=std::move(nextmap)] {
+      LOG_PREFIX(ShardServices::split_pgs);
+      /*
+      return with_blocking_event<
+        PGMap::PGCreationBlockingEvent
+      >([this, child, nextmap=std::move(nextmap)] (auto &&trigger) {
+        LOG_PREFIX(ShardServices::split_pgs);
+        auto [fut, existed] = local_state.pg_map.wait_for_pg(std::move(trigger), child);
+        //existed should never be true
+        if (!existed) {
+          DEBUG(" set creating ");
+          local_state.pg_map.set_creating(child);
+        }
+        return std::move(fut);
+      }).then([this, child, nextmap=std::move(nextmap)] {
+      LOG_PREFIX(ShardServices::split_pgs);
+      */
+      DEBUG(" before make PG: {} ", child.pgid);
+      return make_pg(std::move(nextmap), child, true);
+    }).then([this, &parent, &out_pgs, nextmap=std::move(nextmap), &rctx, &pg_num](
     Ref<PG> child_pg) {
         LOG_PREFIX(ShardServices::split_pgs);
+        //local_state.pg_map.set_creating(child_pg->get_pgid());
         DEBUG(" in THEN of split_pgs");
         DEBUG(" parent ID: {}", parent->get_pgid());
         DEBUG(" child ID: {} ", child_pg->get_pgid());
@@ -886,18 +918,32 @@ seastar::future<std::set<Ref<PG>>> ShardServices::split_pgs(Ref<PG> parent,
         DEBUG(" pg num: {}", pg_num);
         unsigned split_bits = child_pg->get_pgid().get_split_bits(pg_num);
         DEBUG(" got split bits");
-        parent->split_colls(child_pg->get_pgid(), split_bits, child_pg->get_pgid().ps(), 
-                           &child_pg->get_pgpool().info, rctx.transaction);
-        DEBUG(" split collection done");
-        parent->split_into(child_pg->get_pgid().pgid, child_pg, split_bits);
-        DEBUG(" split into done");
-        out_pgs.insert(child_pg);
-        DEBUG(" insert into out_pgs done");
+        return parent->split_colls(child_pg->get_pgid(), split_bits, child_pg->get_pgid().ps(), 
+                           &child_pg->get_pgpool().info, rctx.transaction).then(
+                            [this, &parent, child_pg=std::move(child_pg), &out_pgs, split_bits] () {
+                              LOG_PREFIX(ShardServices::split_pgs);
+                              DEBUG(" {} split collection done", child_pg->get_pgid());
+                              parent->split_into(child_pg->get_pgid().pgid, child_pg, split_bits);
+                              DEBUG(" split into done");
+                              out_pgs.insert(child_pg);
+                              DEBUG(" insert {} into out_pgs done", child_pg->get_pgid());
+                            }
+                           );
     });
-  }).then([this, &out_pgs] {
+  }).then([this, &out_pgs, &nextmap, &rctx] {
     LOG_PREFIX(ShardServices::split_pgs);
     DEBUG(" before return");
-    return seastar::make_ready_future<std::set<Ref<PG>>>(std::move(out_pgs));
+    DEBUG(" OUT PGs: {}", out_pgs.size());
+    return seastar::do_for_each(out_pgs, [this, &rctx, &nextmap] (auto& child_pg) {
+      LOG_PREFIX(ShardServices::split_pgs);
+      DEBUG(" in do for advance map {}", get_map()->get_epoch());
+      return start_operation<PGAdvanceMap>(
+        child_pg, *this, get_map()->get_epoch(), std::move(rctx), true, true).second.then([this] {
+          return seastar::now();
+        });
+    }).then([this, &out_pgs] {
+      return seastar::make_ready_future<std::set<Ref<PG>>>(std::move(out_pgs));
+    });
   });
  });
 }
