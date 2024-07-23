@@ -572,6 +572,14 @@ public:
   void handle_activate_map(PeeringCtx &rctx);
   void handle_initialize(PeeringCtx &rctx);
 
+  void start_split_stats(const std::set<spg_t>& childpgs, std::vector<object_stat_sum_t> *out) {
+    peering_state.start_split_stats(childpgs, out);
+  }
+
+  void finish_split_stats(const object_stat_sum_t& stats, ObjectStore::Transaction &t) {
+    peering_state.finish_split_stats(stats, t);
+  }
+
   seastar::future<> split_colls(
     spg_t child,
     int split_bits,

@@ -601,6 +601,11 @@ public:
       });
   }
 
+  void split_stats(Ref<PG> parent,
+                   std::set<Ref<PG>> childpgs,
+                   const std::set<spg_t> &childpgids,
+                   PeeringCtx &rctx);
+
   seastar::future<std::set<Ref<PG>>> split_pgs(Ref<PG> parent,
               const std::set<spg_t> &childpgids,
               //std::set<Ref<PG>> *out_pgs,
