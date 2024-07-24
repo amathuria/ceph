@@ -118,7 +118,8 @@ seastar::future<> PGAdvanceMap::start()
           std::set<spg_t> children;
           logger().debug(" NEW PG NUM: {} OLD PG NUM: {} ", new_pg_num, old_pg_num);
           if (pg->get_pgid().is_split(old_pg_num, new_pg_num, &children)){
-            logger().debug(" Split happened!! "); 
+            logger().debug(" Split happened!! {}", pg->get_pgid()); 
+            logger().debug(" CHILDREN: {}", children.size());
             return shard_services.split_pgs(pg, children, last_map, new_map, rctx).then(
               [this] (auto &&new_pgs) {
               if (!new_pgs.empty()) {
@@ -130,28 +131,11 @@ seastar::future<> PGAdvanceMap::start()
         return seastar::now();
       });
     });
-	}).then([this] {
-	  return pg->handle_activate_map(rctx).then([this] {
-	    logger().debug("{}: map activated", *this);
-	    if (do_init) {
-	      shard_services.pg_created(pg->get_pgid(), pg, split_child);
-	      logger().info("PGAdvanceMap::start new pg {}", *pg);
-	    }
-	    return seastar::when_all_succeed(
-	      pg->get_need_up_thru()
-	      ? shard_services.send_alive(
-		pg->get_same_interval_since())
-	      : seastar::now(),
-	      shard_services.dispatch_context(
-		pg->get_collection_ref(),
-		std::move(rctx)));
->>>>>>> 3f871724a55 (crimson/osd: Compare new maps to check for splits in pg_advance_map)
-	  });
       }).then([this] {
 	pg->handle_activate_map(rctx);
 	logger().debug("{}: map activated", *this);
 	if (do_init) {
-	  shard_services.pg_created(pg->get_pgid(), pg);
+	  shard_services.pg_created(pg->get_pgid(), pg, split_child);
 	  logger().info("PGAdvanceMap::start new pg {}", *pg);
 	}
 	return pg->complete_rctx(std::move(rctx));

@@ -3512,13 +3512,16 @@ void PeeringState::merge_from(
 void PeeringState::start_split_stats(
   const set<spg_t>& childpgs, vector<object_stat_sum_t> *out)
 {
+  psdout(0) << " START SPLIT STATS " << childpgs.size() << dendl;
   out->resize(childpgs.size() + 1);
+  psdout(0) << " STATS: " << out << dendl;
   info.stats.stats.sum.split(*out);
 }
 
 void PeeringState::finish_split_stats(
   const object_stat_sum_t& stats, ObjectStore::Transaction &t)
 {
+  psdout(0) << " FINISH SPLIT STATS " << stats << dendl;
   info.stats.stats.sum = stats;
   write_if_dirty(t);
 }

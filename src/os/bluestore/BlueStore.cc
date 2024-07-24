@@ -12193,6 +12193,7 @@ ObjectStore::CollectionHandle BlueStore::open_collection(const coll_t& cid)
 ObjectStore::CollectionHandle BlueStore::create_new_collection(
   const coll_t& cid)
 {
+  dout(5) << __func__ << " starting new collection " << dendl;
   std::unique_lock l{coll_lock};
   auto c = ceph::make_ref<Collection>(
     this,

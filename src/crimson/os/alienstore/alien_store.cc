@@ -236,7 +236,9 @@ AlienStore::list_objects(CollectionRef ch,
 seastar::future<CollectionRef> AlienStore::create_new_collection(const coll_t& cid)
 {
   logger().debug("{}", __func__);
+  logger().debug("{} before assert ", __func__);
   assert(tp);
+  logger().debug("{} after assert ", __func__);
   return tp->submit([this, cid] {
     ObjectStore::CollectionHandle c = store->create_new_collection(cid);
     return get_alien_coll_ref(std::move(c));
