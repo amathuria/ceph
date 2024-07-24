@@ -227,10 +227,14 @@ AlienStore::list_objects(CollectionRef ch,
 seastar::future<CollectionRef> AlienStore::create_new_collection(const coll_t& cid)
 {
   logger().debug("{}", __func__);
+  logger().debug("{} before assert ", __func__);
   assert(tp);
+  logger().debug("{} after assert ", __func__);
   return tp->submit([this, cid] {
+    logger().debug(" bluestore create collection ");
     return store->create_new_collection(cid);
   }).then([this, cid] (ObjectStore::CollectionHandle c) {
+    logger().debug(" bluestore collection creation done ");
     CollectionRef ch;
     auto cp = coll_map.find(c->cid);
     if (cp == coll_map.end()) {
