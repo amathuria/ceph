@@ -82,11 +82,9 @@ PGShardManager::get_pg_stats() const
 seastar::future<> PGShardManager::broadcast_map_to_pgs(epoch_t epoch)
 {
   ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
-  std::set<std::pair<spg_t,epoch_t>> newly_split;
-  return shard_services.invoke_on_all([epoch, &newly_split](auto &local_service) {
-    //std::set<std::pair<spg_t,epoch_t>> newly_split;
+  return shard_services.invoke_on_all([epoch](auto &local_service) {
     return local_service.local_state.identify_splits(
-      local_service, epoch, &newly_split
+      local_service, epoch
     );
   })/*
   .then([this, epoch, &newly_split]{

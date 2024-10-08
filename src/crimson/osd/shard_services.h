@@ -127,8 +127,7 @@ class PerShardState {
   
   seastar::future<> identify_splits(
     ShardServices &shard_services,
-    epoch_t epoch,
-    std::set<std::pair<spg_t,epoch_t>> *split_pgs);
+    epoch_t epoch);
   
   seastar::future<> prime_splits(
     ShardServices &shard_services,
@@ -583,8 +582,7 @@ public:
   seastar::future<std::set<std::pair<spg_t,epoch_t>>> identify_splits(
     OSDMapRef old_map,
     OSDMapRef new_map,
-    spg_t pgid,
-    std::set<std::pair<spg_t,epoch_t>> *new_children);
+    spg_t pgid);
   // OSDMapService
   cached_map_t get_map() const final { return local_state.get_osdmap(); }
   epoch_t get_up_epoch() const final { return local_state.up_epoch; }
