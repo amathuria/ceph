@@ -83,9 +83,15 @@ seastar::future<> PGShardManager::broadcast_map_to_pgs(epoch_t epoch)
 {
   ceph_assert(seastar::this_shard_id() == PRIMARY_CORE);
   return shard_services.invoke_on_all([epoch](auto &local_service) {
-    return local_service.local_state.broadcast_map_to_pgs(
+    return local_service.local_state.identify_splits(
       local_service, epoch
     );
+  }).then([this, epoch] {
+    return shard_services.invoke_on_all([epoch](auto &local_service) {
+      return local_service.local_state.broadcast_map_to_pgs(
+	local_service, epoch
+      );
+    });
   }).then([this, epoch] {
     logger().debug("PGShardManager::broadcast_map_to_pgs "
                    "broadcasted up to {}",
