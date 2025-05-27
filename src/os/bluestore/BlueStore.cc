@@ -15672,7 +15672,7 @@ int BlueStore::queue_transactions(
 
   Collection *c = static_cast<Collection*>(ch.get());
   OpSequencer *osr = c->osr.get();
-  dout(10) << __func__ << " ch " << c << " " << c->cid << dendl;
+  dout(5) << __func__ << " ch " << c << " " << c->cid << dendl;
 
   // prepare
   TransContext *txc = _txc_create(static_cast<Collection*>(ch.get()), osr,
@@ -15680,6 +15680,7 @@ int BlueStore::queue_transactions(
 
   for (vector<Transaction>::iterator p = tls.begin(); p != tls.end(); ++p) {
     txc->bytes += (*p).get_num_bytes();
+    dout(5) << " before txc add " << dendl;
     _txc_add_transaction(txc, &(*p));
   }
   _txc_calc_cost(txc);
@@ -15847,6 +15848,7 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
     case Transaction::OP_MERGE_COLLECTION:
       {
         uint32_t bits = op->split_bits;
+	dout(5) << __func__ << " before MERGE COLLECTION " << dendl;
 	r = _merge_collection(txc, &c, cvec[op->dest_cid], bits);
 	if (!r)
 	  continue;
@@ -18617,7 +18619,7 @@ int BlueStore::_create_collection(
 int BlueStore::_remove_collection(TransContext *txc, const coll_t &cid,
 				  CollectionRef *c)
 {
-  dout(15) << __func__ << " " << cid << dendl;
+  dout(5) << __func__ << " " << cid << dendl;
   int r;
 
   (*c)->flush_all_but_last();
@@ -18681,6 +18683,7 @@ out:
 void BlueStore::_do_remove_collection(TransContext *txc,
 				      CollectionRef *c)
 {
+  dout(5) << __func__ << " remove source" << dendl;
   coll_map.erase((*c)->cid);
   txc->removed_collections.push_back(*c);
   (*c)->exists = false;
@@ -18747,7 +18750,7 @@ int BlueStore::_merge_collection(
   CollectionRef& d,
   unsigned bits)
 {
-  dout(15) << __func__ << " " << (*c)->cid << " to " << d->cid
+  dout(5) << __func__ << " " << (*c)->cid << " to " << d->cid
 	   << " bits " << bits << dendl;
   std::unique_lock l((*c)->lock);
   std::unique_lock l2(d->lock);
@@ -18792,7 +18795,7 @@ int BlueStore::_merge_collection(
   encode(d->cnode, bl);
   txc->t->set(PREFIX_COLL, stringify(d->cid), bl);
 
-  dout(10) << __func__ << " " << cid << " to " << d->cid << " "
+  dout(5) << __func__ << " " << cid << " to " << d->cid << " "
 	   << " bits " << bits << " = " << r << dendl;
   return r;
 }

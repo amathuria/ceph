@@ -1798,24 +1798,29 @@ seastar::future<> PG::merge_from(std::map<spg_t,Ref<PG>>& sources, PeeringCtx &r
   DEBUG(" {}", get_pgid());
   std::map<spg_t, PeeringState*> source_peering_state;
   for (auto &&source : sources) {
+    DEBUG(" source ID: {}", source.first);
     source_peering_state.emplace(source.first, &source.second->peering_state);
   }
+  DEBUG(" before peering state merge from");
   peering_state.merge_from(source_peering_state, rctx, split_bits, last_pg_merge_meta);
 
   return seastar::do_for_each(sources, [this, FNAME, &rctx, split_bits] (auto &source) {
     auto target_coll = coll_ref->get_cid();
     auto source_pg = source.second;
-    DEBUG(" source pg{}", source_pg->get_pgid());
+    DEBUG(" source pg {}", source_pg->get_pgid());
     // wipe out source PG's pgmeta
     auto source_coll = source_pg->get_collection_ref()->get_cid();
     // merge (and destroy source collection)
-    rctx.transaction.remove(source_coll, source.first.make_snapmapper_oid());
+    //rctx.transaction.remove(source_coll, source.first.make_snapmapper_oid());
     rctx.transaction.remove(source_coll, source_pg->pgmeta_oid);
     rctx.transaction.merge_collection(source_coll, target_coll, split_bits);
+    DEBUG(" merge collection done");
     // Remove the PG from the shard
     return shard_services.remove_pg(source_pg->get_pgid());
   }).then([this, FNAME, &rctx, split_bits] {
+    DEBUG(" source pg has been removed");
     rctx.transaction.collection_set_bits(coll_ref->get_cid(), split_bits);
+    snap_mapper.update_bits(split_bits);
     return shard_services.get_store().do_transaction(coll_ref, std::move(rctx.transaction));
   });
 }

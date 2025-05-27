@@ -97,7 +97,7 @@ seastar::future<> PGAdvanceMap::start()
 	    DEBUG("{}: advancing map to {}",
 		  *this, next_map->get_epoch());
 	    pg->handle_advance_map(next_map, rctx);
-	    return check_for_splits(*from, next_map);
+	    return check_for_splits_and_merges(*from, next_map);
 	  });
       }).then([this, FNAME] {
 	pg->handle_activate_map(rctx);
@@ -117,11 +117,11 @@ seastar::future<> PGAdvanceMap::start()
   });
 }
 
-seastar::future<> PGAdvanceMap::check_for_splits(
+seastar::future<> PGAdvanceMap::check_for_splits_and_merges(
     epoch_t old_epoch,
     cached_map_t next_map)
 {
-  LOG_PREFIX(PGAdvanceMap::check_for_splits);
+  LOG_PREFIX(PGAdvanceMap::check_for_splits_and_merges);
   using cached_map_t = OSDMapService::cached_map_t;
   cached_map_t old_map = co_await shard_services.get_map(old_epoch);
   if (!old_map->have_pg_pool(pg->get_pgid().pool())) {
@@ -136,20 +136,90 @@ seastar::future<> PGAdvanceMap::check_for_splits(
     co_return;
   }
   auto new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
-  DEBUG(" pg_num change in e{} {} -> {}", next_map->get_epoch(),
+  DEBUG("{} pg_num change in e{} {} -> {}", pg->get_pgid(), next_map->get_epoch(),
                  old_pg_num, new_pg_num);
-  std::set<spg_t> children;
   if (new_pg_num && new_pg_num > old_pg_num) {
+    std::set<spg_t> children;
     if (pg->pgid.is_split(
 	    old_pg_num,
 	    new_pg_num,
 	    &children)) {
       co_await split_pg(children, next_map);
     }
+  } else if (new_pg_num && new_pg_num < old_pg_num) {
+    //std::set<spg_t> merge_sources;
+    /*if (pg->pgid.is_split(
+	  new_pg_num,
+	  old_pg_num,
+	  &merge_sources)) {
+    */
+      DEBUG(" {} Hmm..looks like a merge? ", pg->get_pgid());
+      co_await merge_pg(next_map, new_pg_num, old_pg_num);
+    //}
   }
+
   co_return;
 }
 
+seastar::future<> PGAdvanceMap::merge_pg(
+    //std::set<spg_t> merge_sources,
+    cached_map_t next_map,
+    unsigned new_pg_num,
+    unsigned old_pg_num)
+{
+  LOG_PREFIX(PGAdvanceMap::merge_pg);
+  DEBUG("{}: start", *this);
+  //auto pg_epoch = next_map->get_epoch();
+  spg_t parent;
+  std::map<spg_t, Ref<PG>> source_pgs;
+  std::set<spg_t> merge_sources;
+  // register the pg if it is a source pg
+  if (pg->pgid.is_merge_source(old_pg_num,
+	                       new_pg_num,
+			       &parent)) {
+    parent.is_split(new_pg_num, old_pg_num, &merge_sources);
+    DEBUG(" add pg {} to source_pgs", pg->get_pgid());
+    pg->on_shutdown();
+    DEBUG(" called shutdown");
+    DEBUG(" pg {} is a merge source, register it", pg->get_pgid());
+    co_await shard_services.register_merge_source(parent, pg->get_pgid(),
+	                                          merge_sources.size());
+    co_await shard_services.dispatch_context(pg->get_collection_ref(), std::move(rctx));
+  } else if (pg->pgid.is_merge_target(old_pg_num,
+	                              new_pg_num)) {
+    DEBUG(" pg {} is a merge target", pg->get_pgid());
+    //auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
+    //	                                           std::move(merge_sources));
+    pg->pgid.is_split(new_pg_num, old_pg_num, &merge_sources);
+    auto merge_ready = merge_sources;
+    co_await shard_services.wait_for_merge_sources(pg->get_pgid(),
+	                                           std::move(merge_sources));
+    //co_await std::move(fut);
+    DEBUG(" pg {} after wait_for_merge_sources", pg->get_pgid());
+    unsigned split_bits = pg->get_pgid().get_split_bits(new_pg_num);
+    //auto &s = shard_services.merge_waiter.target_to_source_mapping[pg->get_pgid];
+    //source_pgs.swap(s);
+    for (auto source : merge_ready) {
+      auto source_pg = shard_services.get_pg(source);
+      DEBUG(" after get_pg fo source: {}", source_pg->get_pgid());
+      source_pgs[source] = source_pg;
+    }
+    auto sources = std::move(source_pgs);
+    co_await pg->merge_from(sources,
+	                    rctx, split_bits,
+			    next_map->get_pg_pool(pg->get_pgid().pool())->last_pg_merge_meta);
+    // After merge_from, start a PGAdvanceMap operation to update the PG
+    // state based on the merged data
+    DEBUG(" {} before PGAdvanceMap", pg->get_pgid());
+    co_await shard_services.start_operation<PGAdvanceMap>(
+      pg, shard_services, next_map->get_epoch(),
+      std::move(rctx), false).second;
+    DEBUG(" {} after PGAdvanceMap", pg->get_pgid());
+  } else {
+    DEBUG(" You are not merge source or target! BYE!");
+    co_return;
+  }
+}
 
 seastar::future<> PGAdvanceMap::split_pg(
     std::set<spg_t> split_children,

@@ -489,6 +489,20 @@ public:
 
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
 
+  struct merge_waiter {
+    std::map<spg_t, std::set<spg_t>> target_to_source_mapping;
+    std::map<spg_t, std::set<spg_t>> sources_ready;
+    std::map<spg_t, seastar::shared_promise<>> target_ready;
+  };
+  seastar::sharded<merge_waiter> merge_waiters;
+
+  seastar::future<> start_merge_waiters() {
+    return merge_waiters.start();
+  }
+
+  seastar::future<> stop_merge_waiters() {
+    return merge_waiters.stop();
+  }
   crimson::os::FuturizedStore::Shard &get_store() {
     return local_state.store;
   }
@@ -502,6 +516,10 @@ public:
 
   auto create_split_pg_mapping(spg_t pgid, core_id_t core) {
     return pg_to_shard_mapping.get_or_create_pg_mapping(pgid, core);
+  }
+
+  seastar::future<core_id_t> get_pg_mapping(spg_t pgid) {
+    return pg_to_shard_mapping.get_or_create_pg_mapping(pgid);
   }
 
   auto remove_pg(spg_t pgid) {
@@ -619,14 +637,12 @@ public:
       });
   }
 
-  /// merge epoch -> target pgid -> source pgid -> pg
-  std::map<epoch_t,std::map<spg_t,std::map<spg_t,Ref<PG>>>> merge_waiters;
-  std::map<spg_t, OSDMapRef> merge_target_pgs;
-  seastar::future<> register_for_merge(Ref<PG> pg,
-                                       OSDMapRef new_map,
-                                       OSDMapRef old_map);
-  bool add_merge_waiter(OSDMapRef nextmap, spg_t target, Ref<PG> source,
-                        unsigned need);
+
+  seastar::future<> register_merge_source(spg_t target,
+                                          spg_t source,
+					  int sources_needed);
+  seastar::future<> wait_for_merge_sources(spg_t target,
+                                           std::set<spg_t> sources_needed);
 
   FORWARD_TO_OSD_SINGLETON(set_ready_to_merge_source)
   FORWARD_TO_OSD_SINGLETON(set_ready_to_merge_target)

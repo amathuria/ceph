@@ -3795,6 +3795,7 @@ void PeeringState::merge_from(
   unsigned split_bits,
   const pg_merge_meta_t& last_pg_merge_meta)
 {
+  psdout(10) << " now the Peering State merge is starting " << dendl; 
   bool incomplete = false;
   if (info.last_complete != info.last_update ||
       info.is_incomplete() ||
@@ -3827,6 +3828,7 @@ void PeeringState::merge_from(
   vector<PGLog*> log_from;
   for (auto& i : sources) {
     auto& source = i.second;
+    psdout(10) << "source " << i.first << dendl;
     if (!source) {
       psdout(10) << "source " << i.first << " missing" << dendl;
       incomplete = true;
@@ -3897,7 +3899,9 @@ void PeeringState::merge_from(
   }
 
   // merge logs
+  
   pg_log.merge_from(log_from, info.last_update);
+  psdout(10) << " PG log merge done" << dendl;
 
   // make sure we have a meaningful last_epoch_started/clean (if we were a
   // placeholder)
@@ -3970,6 +3974,7 @@ void PeeringState::merge_from(
 
   dirty_info = true;
   dirty_big_info = true;
+  psdout(10) << " we are done here! " << dendl;
 }
 
 void PeeringState::start_split_stats(

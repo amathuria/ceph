@@ -470,6 +470,10 @@ seastar::future<> OSD::start()
         osd_singleton_state.local().recoverystate_perf,
         std::ref(store),
         std::ref(osd_states));
+    }).then([this] {
+      return shard_services.invoke_on_all([](ShardServices& s) {
+        return s.start_merge_waiters();
+      });
     });
   }).then([this, FNAME] {
     heartbeat.reset(new Heartbeat{
@@ -844,6 +848,10 @@ seastar::future<> OSD::stop()
       return monc->stop();
     }).then([this] {
       return mgrc->stop();
+    }).then([this] {
+      return shard_services.invoke_on_all([](ShardServices& s) {
+	return s.stop_merge_waiters();
+      });
     }).then([this] {
       return shard_services.stop();
     }).then([this] {
