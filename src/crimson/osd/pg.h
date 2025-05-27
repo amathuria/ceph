@@ -412,6 +412,12 @@ public:
   }
 
   void on_removal(ceph::os::Transaction &t) final;
+  void on_shutdown() {
+    backend->on_actingset_changed(is_primary());
+    clear_primary_state();
+    if (is_primary()) 
+      clear_ready_to_merge();
+  }
 
   void clear_log_entry_maps();
 
@@ -447,6 +453,7 @@ public:
     SUBDEBUGDPP(osd, "", *this);
     (void)shard_services.set_ready_to_merge_source(pgid.pgid, lu).discard_result();
   }
+
 
   void on_active_actmap() final;
   void on_active_advmap(const OSDMapRef &osdmap) final;
@@ -1021,6 +1028,7 @@ private:
   bool can_discard_replica_op(const Message& m, epoch_t m_map_epoch) const;
   bool can_discard_op(const MOSDOp& m) const;
   void context_registry_on_change();
+
   bool is_missing_object(const hobject_t& soid) const {
     return get_local_missing().is_missing(soid);
   }

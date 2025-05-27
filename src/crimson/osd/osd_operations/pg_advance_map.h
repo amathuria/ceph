@@ -53,10 +53,13 @@ public:
   PipelineHandle &get_handle() { return handle; }
 
   using cached_map_t = OSDMapService::cached_map_t;
-  seastar::future<> check_for_splits(epoch_t old_epoch,
-                                     cached_map_t next_map);
+  seastar::future<> check_for_splits_and_merges(epoch_t old_epoch,
+                                                cached_map_t next_map);
   seastar::future<> split_pg(std::set<spg_t> split_children,
                              cached_map_t next_map);
+  seastar::future<> merge_pg(cached_map_t next_map,
+			     unsigned new_pg_num,
+			     unsigned old_pg_num);
   void split_stats(std::set<Ref<PG>> child_pgs,
 		   const std::set<spg_t> &child_pgids);
 
