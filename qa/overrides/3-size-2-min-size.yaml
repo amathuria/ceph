@@ -1,6 +1,6 @@
 overrides:
   thrashosds:
-    min_in: 4
+    min_in: 2
   ceph:
     conf:
       global:
