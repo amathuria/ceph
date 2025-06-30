@@ -169,11 +169,12 @@ seastar::future<> PGAdvanceMap::split_pg(
     DEBUG(" PG {} mapped to {}", child_pgid.pgid, core);
     DEBUG(" {} map epoch: {}", child_pgid.pgid, pg_epoch);
     auto map = next_map;
+    unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
+    pg->update_snap_mapper_bits(pg->get_pgid().get_split_bits(new_pg_num));
     auto child_pg = co_await shard_services.make_pg(std::move(map), child_pgid, true);
 
     DEBUG(" Parent pgid: {}", pg->get_pgid());
     DEBUG(" Child pgid: {}", child_pg->get_pgid());
-    unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
     // Depending on the new_pg_num the parent PG's collection is split.
     // The child PG will be initiated with this split collection.
     unsigned split_bits = child_pg->get_pgid().get_split_bits(new_pg_num);
@@ -185,8 +186,9 @@ seastar::future<> PGAdvanceMap::split_pg(
     DEBUG(" {} split collection done", child_pg->get_pgid());
     // Update the child PG's info from the parent PG
     pg->split_into(child_pg->get_pgid().pgid, child_pg, split_bits);
-
+    child_pg->init_collection_pool_opts();
     co_await handle_split_pg_creation(child_pg, next_map);
+  
     split_pgs.insert(child_pg);
   });
 

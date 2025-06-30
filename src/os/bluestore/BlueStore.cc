@@ -5254,6 +5254,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   spg_t pgid;
   if (cid.is_pg(&pgid)) {
     if (!oid.match(cnode.bits, pgid.ps())) {
+      lderr(store->cct) << __func__ << " for CID " << cid << dendl;
       lderr(store->cct) << __func__ << " oid " << oid << " not part of "
 			<< pgid << " bits " << cnode.bits << dendl;
       ceph_abort();
@@ -18572,7 +18573,7 @@ int BlueStore::_create_collection(
   unsigned bits,
   CollectionRef *c)
 {
-  dout(15) << __func__ << " " << cid << " bits " << bits << dendl;
+  dout(5) << __func__ << " " << cid << " bits " << bits << dendl;
   int r;
   bufferlist bl;
 
@@ -18594,7 +18595,7 @@ int BlueStore::_create_collection(
   r = 0;
 
  out:
-  dout(10) << __func__ << " " << cid << " bits " << bits << " = " << r << dendl;
+  dout(5) << __func__ << " " << cid << " bits " << bits << " = " << r << dendl;
   return r;
 }
 
@@ -18678,7 +18679,7 @@ int BlueStore::_split_collection(TransContext *txc,
 				CollectionRef& d,
 				unsigned bits, int rem)
 {
-  dout(15) << __func__ << " " << c->cid << " to " << d->cid << " "
+  dout(5) << __func__ << " " << c->cid << " to " << d->cid << " "
 	   << " bits " << bits << dendl;
   std::unique_lock l(c->lock);
   std::unique_lock l2(d->lock);
@@ -18720,8 +18721,9 @@ int BlueStore::_split_collection(TransContext *txc,
   encode(c->cnode, bl);
   txc->t->set(PREFIX_COLL, stringify(c->cid), bl);
 
-  dout(10) << __func__ << " " << c->cid << " to " << d->cid << " "
+  dout(5) << __func__ << " " << c->cid << " to " << d->cid << " "
 	   << " bits " << bits << " = " << r << dendl;
+  dout(5) << __func__ << " done with split collection " << dendl;
   return r;
 }
 
