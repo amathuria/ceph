@@ -897,6 +897,7 @@ void PG::handle_initialize(PeeringCtx &rctx)
 
 void PG::init_collection_pool_opts()
 {
+  logger().debug("{} going to set collection options", __func__);
   std::ignore = shard_services.get_store().set_collection_opts(coll_ref, get_pgpool().info.opts);
 }
 

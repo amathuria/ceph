@@ -577,6 +577,7 @@ void PeeringState::advance_map(
     newacting, acting_primary);
   handle_event(evt, &rctx);
   if (pool.info.last_change == osdmap_ref->get_epoch()) {
+    psdout(10) << "handle_advance_map: Calling on_pool_change" << dendl;
     pl->on_pool_change();
   }
   readable_interval = pool.get_readable_interval(cct->_conf);

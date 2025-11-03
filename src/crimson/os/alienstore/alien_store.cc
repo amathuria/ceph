@@ -289,7 +289,9 @@ seastar::future<> AlienStore::set_collection_opts(CollectionRef ch,
     auto c = static_cast<AlienCollection*>(ch.get());
     return store->set_collection_opts(c->collection, opts);
   }).then([] (int r) {
-    assert(r==0);
+    if (r < 0 && r != -EOPNOTSUPP) {
+      logger().error("{} set_collection_opts return error {}", __func__, r);
+    }
     return seastar::now();
   });
 }
