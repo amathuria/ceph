@@ -256,6 +256,20 @@ CyanStore::Shard::list_collections()
   return seastar::make_ready_future<std::vector<coll_core_t>>(std::move(collections));
 }
 
+void CyanStore::Shard::cleanup_collection_ref(const coll_t& cid) {
+    // Remove from the main map
+    auto it = coll_map.find(cid);
+    if (it != coll_map.end()) {
+        coll_map.erase(it);
+    }
+
+    // Also remove from new_coll_map if it exists there
+    auto new_it = new_coll_map.find(cid);
+    if (new_it != new_coll_map.end()) {
+        new_coll_map.erase(new_it);
+    }
+}
+
 CyanStore::Shard::base_errorator::future<bool>
 CyanStore::Shard::exists(
   CollectionRef ch,

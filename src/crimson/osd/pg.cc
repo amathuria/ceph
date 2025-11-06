@@ -448,6 +448,7 @@ void PG::prepare_write(pg_info_t &info,
 		       bool need_write_epoch,
 		       ceph::os::Transaction &t)
 {
+  logger().debug("{} for pgmeta_oid: {}", __func__, pgid);
   std::map<string,bufferlist> km;
   std::string key_to_remove;
   if (dirty_big_info || dirty_info) {
@@ -1789,7 +1790,7 @@ bool PG::check_in_progress_op(
       reqid, version, user_version, return_code, op_returns));
 }
 
-
+/*
 seastar::future<> PG::merge_from(std::map<spg_t,Ref<PG>>& sources, PeeringCtx &rctx,
                                  unsigned split_bits,
                                  const pg_merge_meta_t& last_pg_merge_meta)
@@ -1811,10 +1812,13 @@ seastar::future<> PG::merge_from(std::map<spg_t,Ref<PG>>& sources, PeeringCtx &r
     // wipe out source PG's pgmeta
     auto source_coll = source_pg->get_collection_ref()->get_cid();
     // merge (and destroy source collection)
-    //rctx.transaction.remove(source_coll, source.first.make_snapmapper_oid());
+    rctx.transaction.remove(source_coll, source_pg->get_pgid().make_snapmapper_oid());
     rctx.transaction.remove(source_coll, source_pg->pgmeta_oid);
+    DEBUG(" source collection has been removed: {}", source_pg->get_pgid());
     rctx.transaction.merge_collection(source_coll, target_coll, split_bits);
     DEBUG(" merge collection done");
+    // Remove from coll_map
+    shard_services.get_store().cleanup_collection_ref(source_coll);
     // Remove the PG from the shard
     return shard_services.remove_pg(source_pg->get_pgid());
   }).then([this, FNAME, &rctx, split_bits] {
@@ -1824,5 +1828,47 @@ seastar::future<> PG::merge_from(std::map<spg_t,Ref<PG>>& sources, PeeringCtx &r
     return shard_services.get_store().do_transaction(coll_ref, std::move(rctx.transaction));
   });
 }
+*/
+
+seastar::future<> PG::merge_from(
+    std::map<spg_t, Ref<PG>>& sources,
+    PeeringCtx &rctx,
+    unsigned split_bits,
+    const pg_merge_meta_t& last_pg_merge_meta)
+{
+  LOG_PREFIX(PG::merge_from);
+  DEBUG("target {}", get_pgid());
+
+  std::map<spg_t, PeeringState*> source_states;
+  for (auto& [pgid, src_pg] : sources) {
+    source_states.emplace(pgid, &src_pg->peering_state);
+  }
+
+  // synchronous peering-state merge that must append omap ops
+  peering_state.merge_from(source_states, rctx, split_bits, last_pg_merge_meta);
+
+  // append remove/merge ops to rctx.transaction
+  co_await seastar::do_for_each(sources, [&](auto& entry) -> seastar::future<> {
+    auto& [pgid, src_pg] = entry;
+    auto src_coll = src_pg->get_collection_ref()->get_cid();
+    auto dst_coll = coll_ref->get_cid();
+
+    DEBUG("merging from {}", pgid);
+
+    rctx.transaction.remove(src_coll, src_pg->get_pgid().make_snapmapper_oid());
+    rctx.transaction.remove(src_coll, src_pg->pgmeta_oid);
+    rctx.transaction.merge_collection(src_coll, dst_coll, split_bits);
+
+    co_return;
+  });
+
+  rctx.transaction.collection_set_bits(coll_ref->get_cid(), split_bits);
+  snap_mapper.update_bits(split_bits);
+
+  // commit the transaction that the caller expects to handle (optional: avoid commit if caller does it)
+  // NOTE: if you want the caller to commit, *do not* call do_transaction here. Just return.
+  co_return;
+}
+
 
 }

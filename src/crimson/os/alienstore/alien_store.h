@@ -85,6 +85,7 @@ public:
   seastar::future<std::vector<coll_core_t>> list_collections() final;
   seastar::future<> set_collection_opts(CollectionRef c,
                                         const pool_opts_t& opts) final;
+  void cleanup_collection_ref(const coll_t& cid) final;
 
   seastar::future<> do_transaction_no_callbacks(
     CollectionRef c,

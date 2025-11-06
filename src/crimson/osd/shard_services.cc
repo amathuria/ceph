@@ -106,68 +106,135 @@ seastar::future<> PerShardState::broadcast_map_to_pgs(
     });
 }
 
+/*
 seastar::future<> ShardServices::register_merge_source(spg_t target,
                                                        spg_t source,
 						       int sources_needed)
 {
   LOG_PREFIX(ShardServices::register_merge_source);
   DEBUG("");
+  core_id_t target_core = co_await get_pg_mapping(target);
+  DEBUG(" Target: {}, on core: {}", target, target_core);
+
+
+}
+
+{
+  LOG_PREFIX(ShardServices::register_merge_source);
+  DEBUG("");
+
+  DEBUG(" shard {} merge_waiters.size {}", seastar::this_shard_id(),
+      merge_waiters.local().sources_ready.size());
 
   core_id_t target_core = co_await get_pg_mapping(target);
   DEBUG(" Target: {}, on core: {}", target, target_core); 
   co_await merge_waiters.invoke_on(target_core, [this, target,
       source, sources_needed, FNAME] (merge_waiter& waiter) -> seastar::future<> {
       // add the source to the target's list of sources
+      //  auto &ready = waiter.sources_ready[target];
+      auto target_pg = get_pg(target);
+      if (!target_pg) {
+	DEBUG(" Not {} target PG's primary OSD :( ", target);
+	co_return;
+      }
+      DEBUG(" GOT TARGET PG");
+      if (!target_pg->is_primary()) {
+	DEBUG(" Not Primary PG Bye!!");
+	co_return;
+      }
+      DEBUG(" YAY PRIMARY!");
       waiter.sources_ready[target].insert(source);
       DEBUG(" adding source {} to mapping for target {}", source, target);
+      DEBUG(" sources needed {}", sources_needed);
+      DEBUG(" shard {} merge_waiters.size {}", seastar::this_shard_id(),
+      waiter.sources_ready[target].size());
+      auto &p = waiter.ensure_promise(target);
 
-      if (waiter.sources_ready.size() == sources_needed) {
-        waiter.target_ready.at(target).set_value();
-	waiter.target_ready.erase(target);
-	waiter.sources_ready.erase(target);
+      if (waiter.sources_ready[target].size() == static_cast<size_t>(sources_needed)) {
+	if (!p.available() && waiter.target_registered) {
+	  DEBUG(" Sources are ready!! fulfilling promise for target {}", target);  
+	  p.set_value();
+	} else if (!waiter.target_registered) {
+          DEBUG(" Sources are ready but target {} isn't!", target);
+	} else {
+	  DEBUG(" promise already satisfied for target {}", target);
+	}
       }
       co_return;
   });
 }
+*/
 
-seastar::future<> ShardServices::wait_for_merge_sources(spg_t target,
-                                                        std::set<spg_t> sources_needed)
+seastar::future<> ShardServices::register_merge_source(
+    spg_t target,
+    spg_t source,
+    int sources_needed)
+{
+  LOG_PREFIX(ShardServices::register_merge_source);
+  DEBUG("");
+
+  core_id_t target_core = co_await get_pg_mapping(target);
+  DEBUG(" Target: {}, on core: {}", target, target_core);
+
+  co_await merge_waiters.invoke_on(
+    target_core,
+    [this, target, source, sources_needed, FNAME](merge_waiter& waiter) -> seastar::future<> {
+      // 1. Check if we are already done before doing work
+      // If the promise is already set, we don't need to do anything.
+      if (waiter.target_ready.contains(target) && 
+          waiter.target_ready[target].available()) {
+         DEBUG("Target {} is already ready, ignoring redundant source {}", target, source);
+         co_return;
+      }
+
+      // add the source to the target's list of sources
+      waiter.sources_ready[target].insert(source);
+      DEBUG(" adding source {} to mapping for target {}", source, target);
+      DEBUG(" sources ready {} / {}", waiter.sources_ready[target].size(), sources_needed);
+
+      if (waiter.sources_ready[target].size() == static_cast<size_t>(sources_needed)) {
+        DEBUG(" Sources are ready!!");
+        // Double check availability just to be safe, though the top check covers mostly
+        auto& promise = waiter.target_ready[target];
+        if (!promise.available()) {
+            DEBUG(" All sources ready! Setting promise.");
+            promise.set_value();
+        }
+      }
+
+      co_return;
+    });
+}
+
+
+seastar::future<> ShardServices::wait_for_merge_sources(
+    spg_t target, std::set<spg_t> sources_needed)
 {
   LOG_PREFIX(ShardServices::wait_for_merge_sources);
   DEBUG(" starting for target pg {}", target);
   core_id_t target_core = co_await get_pg_mapping(target);
   DEBUG(" target core: {}", target_core);
+
   co_await merge_waiters.invoke_on(target_core,
-      [FNAME, target, sources = std::move(sources_needed)]
-      (merge_waiter& waiter) mutable -> seastar::future<> {
-      //waiter.target_to_source_mapping[target] = std::move(sources);
+    [FNAME, target, sources = std::move(sources_needed)]
+    (merge_waiter& waiter) mutable -> seastar::future<> {
+      auto& ready = waiter.sources_ready[target];
+      DEBUG("already have {} sources ready for {}", ready.size(), target);
 
-      // check if any sources are ready
-      // and remove them from the set
-      auto source_iter = waiter.sources_ready.find(target);
-      if (source_iter != waiter.sources_ready.end()) {
-        for (auto& source: source_iter->second) {
-	  DEBUG(" remove {} from target_to_source_mapping", source);
-	  waiter.target_to_source_mapping[target].erase(source);
-	}
+      for (auto& s : ready)
+        sources.erase(s);
+
+      if (sources.empty()) {
+        DEBUG("all sources are ready for {}", target);
+        waiter.sources_ready.erase(target);
+        waiter.target_ready.erase(target);
+        return seastar::make_ready_future<>();
       }
 
-      // all sources are ready
-      if (waiter.target_to_source_mapping[target].empty()) {
-        DEBUG(" all sources are ready");
-        waiter.target_to_source_mapping.erase(target);
-	waiter.sources_ready.erase(target);
-	return seastar::make_ready_future<>();
-      }
-
-      // all sources are not ready yet
-      // seastar::shared_promise<>
-      auto& merge_promise = waiter.target_ready[target];
-      DEBUG(" sources are not ready yet, returning");
-      return merge_promise.get_shared_future();
-  }); //.then([](seastar::future<> f) {
-  //co_return;
-  //});
+      auto& p = waiter.target_ready[target];
+      DEBUG("sources not ready for {}, still need {}", target, sources.size());
+      return p.get_shared_future();
+  });
 }
 
 Ref<PG> PerShardState::get_pg(spg_t pgid)

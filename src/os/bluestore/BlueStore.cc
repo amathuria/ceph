@@ -1096,6 +1096,8 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
 
   void _add(BlueStore::Onode* o, int level) override
   {
+    dout(5) << __func__ << " tid=" << std::this_thread::get_id()
+       << " oid=" << o->oid << " exists=" << o->exists << dendl;
     o->set_cached();
     if (o->pin_nref == 1) {
       (level > 0) ? lru.push_front(*o) : lru.push_back(*o);
@@ -1103,11 +1105,12 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
       *(o->cache_age_bin) += 1;
     }
     ++num; // we count both pinned and unpinned entries
-    dout(20) << __func__ << " " << this << " " << o->oid << " added, num="
+    dout(5) << __func__ << " " << this << " " << o->oid << " added, num="
              << num << dendl;
   }
   void _rm(BlueStore::Onode* o) override
   {
+    dout(5) << __func__ << " ENTERED" << dendl;
     o->clear_cached();
     if (o->lru_item.is_linked()) {
       *(o->cache_age_bin) -= 1;
@@ -1115,7 +1118,7 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
     }
     ceph_assert(num);
     --num;
-    dout(20) << __func__ << " " << this << " " << " " << o->oid << " removed, num=" << num << dendl;
+    dout(5) << __func__ << " " << this << " " << " " << o->oid << " removed, num=" << num << dendl;
   }
 
   void maybe_unpin(BlueStore::Onode* o) override
@@ -1140,7 +1143,7 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
 	  ceph_assert(num);
 	  --num;
 	  o->clear_cached();
-	  dout(20) << __func__ << " " << this << " " << o->oid << " removed"
+	  dout(5) << __func__ << " " << this << " " << o->oid << " removed"
                    << dendl;
           // remove will also decrement nref
           o->c->onode_space._remove(o->oid);
@@ -1154,7 +1157,7 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
           o->cache_age_bin = age_bins.front();
           *(o->cache_age_bin) += 1;
         }
-        dout(20) << __func__ << " " << this << " " << o->oid << " touched"
+        dout(5) << __func__ << " " << this << " " << o->oid << " touched"
                  << dendl;
       }
     }
@@ -1190,11 +1193,15 @@ struct LruOnodeCacheShard : public BlueStore::OnodeCacheShard {
   }
   void _move_pinned(OnodeCacheShard *to, BlueStore::Onode *o) override
   {
+    dout(5) << __func__ << " Let's see what's happening " << dendl;
     if (to == this) {
+      dout(5) << __func__ << " RETURN " << dendl;
       return;
     }
+    dout(5) << __func__ << " Before _rm() for OID: " << o->oid << dendl;
     _rm(o);
     ceph_assert(o->nref > 1);
+    dout(5) << __func__ << " Before _add() for OID: " << o->oid << dendl;
     to->_add(o, 0);
   }
   void add_stats(uint64_t *onodes, uint64_t *pinned_onodes) override
@@ -2073,7 +2080,7 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::add_onode(const ghobject_t& oid,
 
 void BlueStore::OnodeSpace::_remove(const ghobject_t& oid)
 {
-  ldout(cache->cct, 20) << __func__ << " " << oid << " " << dendl;
+  ldout(cache->cct, 5) << __func__ << " " << oid << " " << dendl;
   onode_map.erase(oid);
 }
 
@@ -2107,7 +2114,7 @@ BlueStore::OnodeRef BlueStore::OnodeSpace::lookup(const ghobject_t& oid)
 void BlueStore::OnodeSpace::clear()
 {
   std::lock_guard l(cache->lock);
-  ldout(cache->cct, 10) << __func__ << " " << onode_map.size()<< dendl;
+  ldout(cache->cct, 5) << __func__ << " " << onode_map.size()<< dendl;
   for (auto &p : onode_map) {
     cache->_rm(p.second.get());
   }
@@ -4923,6 +4930,7 @@ void BlueStore::Onode::decode_raw(
   BlueStore::ExtentMap::ExtentDecoder& edecoder,
   bool use_onode_segmentation)
 {
+  std::cerr << "decode_raw: onode " << on << ", oid=" << on->oid << "\n";
   on->exists = true;
   auto p = v.front().begin_deep();
   on->onode.decode(p, use_onode_segmentation ? 0 : bluestore_onode_t::FLAG_DEBUG_FORCE_V2);
@@ -4955,6 +4963,7 @@ BlueStore::Onode* BlueStore::Onode::create_decode(
 
   if (v.length()) {
     ExtentMap::ExtentDecoderFull edecoder(on->extent_map);
+    std::cerr << "calling decode_raw: onode " << on << ", oid=" << on->oid << "\n";
     decode_raw(on, v, edecoder, use_onode_segmentation);
 
     for (auto& i : on->onode.attrs) {
@@ -5330,7 +5339,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
   string key;
   get_object_key(store->cct, oid, &key);
 
-  ldout(store->cct, 20) << __func__ << " oid " << oid << " key "
+  ldout(store->cct, 5) << __func__ << " oid " << oid << " key "
 			<< pretty_binary_string(key) << dendl;
 
   bufferlist v;
@@ -5357,7 +5366,7 @@ BlueStore::OnodeRef BlueStore::Collection::get_onode(
 void BlueStore::Collection::split_cache(
   Collection *dest)
 {
-  ldout(store->cct, 10) << __func__ << " to " << dest << dendl;
+  ldout(store->cct, 5) << __func__ << " to " << dest << dendl;
 
   auto *ocache = get_onode_cache();
   auto *ocache_dest = dest->get_onode_cache();
@@ -5379,11 +5388,11 @@ void BlueStore::Collection::split_cache(
     OnodeRef o = p->second;
     if (!p->second->oid.match(destbits, destpg.pgid.ps())) {
       // onode does not belong to this child
-      ldout(store->cct, 20) << __func__ << " not moving " << o << " " << o->oid
+      ldout(store->cct, 5) << __func__ << " not moving " << o << " " << o->oid
 			    << dendl;
       ++p;
     } else {
-      ldout(store->cct, 20) << __func__ << " moving " << o << " " << o->oid
+      ldout(store->cct, 5) << __func__ << " moving " << o << " " << o->oid
 			    << dendl;
 
       // ensuring that nref is always >= 2 and hence onode is pinned
@@ -5392,7 +5401,10 @@ void BlueStore::Collection::split_cache(
       p = onode_space.onode_map.erase(p);
       dest->onode_space.onode_map[o->oid] = o;
       if (o->cached) {
+	ldout(store->cct, 5) << __func__ << " going to call _move_pinned " << dendl;
+	ldout(store->cct, 5) << __func__ << " OID exists = " << o->exists << dendl;
         get_onode_cache()->_move_pinned(dest->get_onode_cache(), o.get());
+	ldout(store->cct, 5) << __func__ << " after _move_pinned OID exists = " << o->exists << dendl;
       }
       o->c = dest;
 
@@ -9741,7 +9753,7 @@ void BlueStore::_fsck_foreach_shared_blob(
 	  continue;
 	}
       }
-      dout(20) << __func__
+      dout(5) << __func__
 	       << " inspecting shared blob refs for col:" << c->cid
 	       << " obj:" << oid
 	       << dendl;
@@ -9901,7 +9913,7 @@ BlueStore::OnodeRef BlueStore::fsck_check_objects_shallow(
     &ctx.expected_store_statfs;
 
 
-  dout(10) << __func__ << "  " << oid << dendl;
+  dout(5) << __func__ << "  " << oid << dendl;
   OnodeRef o;
   o.reset(Onode::create_decode(c, oid, key, value, false, segment_size != 0));
   ++num_objects;
@@ -11299,7 +11311,7 @@ int BlueStore::_fsck_on_open(BlueStore::FSCKDepth depth, bool repair)
 	  continue;
 	}
 
-	dout(20) << __func__ << " check misreference for col:" << c->cid
+	dout(5) << __func__ << " check misreference for col:" << c->cid
 		  << " obj:" << oid << dendl;
 
         OnodeRef o;
@@ -12329,7 +12341,7 @@ BlueStore::CollectionRef BlueStore::_get_collection_by_oid(const ghobject_t& oid
 
 void BlueStore::_queue_reap_collection(CollectionRef& c)
 {
-  dout(10) << __func__ << " " << c << " " << c->cid << dendl;
+  dout(5) << __func__ << " " << c << " " << c->cid << dendl;
   // _reap_collections and this in the same thread,
   // so no need a lock.
   removed_collections.push_back(c);
@@ -12351,8 +12363,11 @@ void BlueStore::_reap_collections()
   list<CollectionRef>::iterator p = removed_colls.begin();
   while (p != removed_colls.end()) {
     CollectionRef c = *p;
-    dout(10) << __func__ << " " << c << " " << c->cid << dendl;
+    dout(5) << __func__ << " " << c << " " << c->cid << dendl;
     if (c->onode_space.map_any([&](Onode* o) {
+	  dout(5) << " reap_collections onode " << o << " exists=" << o->exists
+         << " flushing=" << o->flushing_count << " " << c->cid << dendl;
+	 dout(5) << " reap_collections oid: " << o->oid << " tid=" << std::this_thread::get_id() << dendl;
 	  ceph_assert(!o->exists);
 	  if (o->flushing_count.load()) {
 	    dout(10) << __func__ << " " << c << " " << c->cid << " " << o->oid
@@ -12366,7 +12381,7 @@ void BlueStore::_reap_collections()
     }
     c->onode_space.clear();
     p = removed_colls.erase(p);
-    dout(10) << __func__ << " " << c << " " << c->cid << " done" << dendl;
+    dout(5) << __func__ << " " << c << " " << c->cid << " done" << dendl;
   }
   if (removed_colls.empty()) {
     dout(10) << __func__ << " all reaped" << dendl;
@@ -12438,7 +12453,7 @@ void BlueStore::set_collection_commit_queue(
 bool BlueStore::exists(CollectionHandle &c_, const ghobject_t& oid)
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(10) << __func__ << " " << c->cid << " " << oid << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << oid << dendl;
   if (!c->exists)
     return false;
 
@@ -12463,7 +12478,7 @@ int BlueStore::stat(
   Collection *c = static_cast<Collection *>(c_.get());
   if (!c->exists)
     return -ENOENT;
-  dout(10) << __func__ << " " << c->get_cid() << " " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " " << oid << dendl;
 
   {
     std::shared_lock l(c->lock);
@@ -12568,7 +12583,7 @@ int BlueStore::read(
   auto start = mono_clock::now();
   Collection *c = static_cast<Collection *>(c_.get());
   const coll_t &cid = c->get_cid();
-  dout(15) << __func__ << " " << cid << " " << oid
+  dout(5) << __func__ << " " << cid << " " << oid
 	   << " 0x" << std::hex << offset << "~" << length << std::dec
 	   << dendl;
   if (!c->exists)
@@ -13223,7 +13238,7 @@ int BlueStore::readv(
   auto start = mono_clock::now();
   Collection *c = static_cast<Collection *>(c_.get());
   const coll_t &cid = c->get_cid();
-  dout(15) << __func__ << " " << cid << " " << oid
+  dout(5) << __func__ << " " << cid << " " << oid
            << " fiemap " << m
            << dendl;
   if (!c->exists)
@@ -13392,7 +13407,7 @@ int BlueStore::dump_onode(CollectionHandle &c_,
   Formatter *f)
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->cid << " " << oid << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
 
@@ -13429,7 +13444,7 @@ int BlueStore::getattr(
   bufferptr& value)
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->cid << " " << oid << " " << name << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << oid << " " << name << dendl;
   if (!c->exists)
     return -ENOENT;
 
@@ -13467,7 +13482,7 @@ int BlueStore::getattrs(
   map<string,bufferptr,less<>>& aset)
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->cid << " " << oid << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
 
@@ -13701,7 +13716,7 @@ int BlueStore::_omap_get(
   map<string, bufferlist> *out /// < [out] Key to value map
   )
 {
-  dout(15) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
   std::shared_lock l(c->lock);
@@ -13768,7 +13783,7 @@ int BlueStore::omap_get_header(
   )
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
   std::shared_lock l(c->lock);
@@ -13804,7 +13819,7 @@ int BlueStore::omap_get_values(
   )
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
   std::shared_lock l(c->lock);
@@ -13855,7 +13870,7 @@ int BlueStore::omap_check_keys(
   )
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(15) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " oid " << oid << dendl;
   if (!c->exists)
     return -ENOENT;
   std::shared_lock l(c->lock);
@@ -13902,7 +13917,7 @@ int BlueStore::omap_iterate(
   )
 {
   Collection *c = static_cast<Collection *>(c_.get());
-  dout(10) << __func__ << " " << c->get_cid() << " " << oid << dendl;
+  dout(5) << __func__ << " " << c->get_cid() << " " << oid << dendl;
   if (!c->exists) {
     return -ENOENT;
   }
@@ -14219,7 +14234,7 @@ void BlueStore::_assign_nid(TransContext *txc, OnodeRef& o)
     return;
   }
   uint64_t nid = ++nid_last;
-  dout(20) << __func__ << " " << nid << dendl;
+  dout(5) << __func__ << " " << nid << dendl;
   o->onode.nid = nid;
   txc->last_nid = nid;
   o->exists = true;
@@ -14800,7 +14815,7 @@ void BlueStore::_osr_attach(Collection *c)
 void BlueStore::_osr_register_zombie(OpSequencer *osr)
 {
   std::lock_guard l(zombie_osr_lock);
-  dout(10) << __func__ << " " << osr << " " << osr->cid << dendl;
+  dout(5) << __func__ << " " << osr << " " << osr->cid << dendl;
   osr->zombie = true;
   auto i = zombie_osr_set.emplace(osr->cid, osr);
   // this is either a new insertion or the same osr is already there
@@ -14836,7 +14851,7 @@ void BlueStore::_osr_drain_preceding(TransContext *txc)
 
 void BlueStore::_osr_drain(OpSequencer *osr)
 {
-  dout(10) << __func__ << " " << osr << dendl;
+  dout(5) << __func__ << " " << osr << dendl;
   ++deferred_aggressive; // FIXME: maybe osr-local aggressive flag?
   {
     // submit anything pending
@@ -14857,7 +14872,7 @@ void BlueStore::_osr_drain(OpSequencer *osr)
   }
   osr->drain();
   --deferred_aggressive;
-  dout(10) << __func__ << " " << osr << " done" << dendl;
+  dout(5) << __func__ << " " << osr << " done" << dendl;
 }
 
 void BlueStore::_osr_drain_all()
@@ -15777,9 +15792,10 @@ void BlueStore::_txc_aio_submit(TransContext *txc)
 
 void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
 {
+  dout(5) << __func__ << " yay in _txc_add_transaction" << dendl;
   Transaction::iterator i = t->begin();
-
-  _dump_transaction<30>(cct, t);
+  dout(5) << __func__ << " after Transaction::iterator" << dendl;
+  _dump_transaction<5>(cct, t);
 
   vector<CollectionRef> cvec(i.colls.size());
   unsigned j = 0;
@@ -15795,8 +15811,10 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
     int r = 0;
 
     // no coll or obj
-    if (op->op == Transaction::OP_NOP)
+    if (op->op == Transaction::OP_NOP) {
+      dout(5) << __func__ << " no coll or obj" << dendl;
       continue;
+    }
 
 
     // collection operations
@@ -15815,6 +15833,7 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
     case Transaction::OP_RMCOLL:
       {
         const coll_t &cid = i.get_cid(op->cid);
+	dout(5) << __func__ << " before _remove_collection" << dendl;
 	r = _remove_collection(txc, cid, &c);
 	if (!r)
 	  continue;
@@ -15913,10 +15932,16 @@ void BlueStore::_txc_add_transaction(TransContext *txc, Transaction *t)
     }
 
     // object operations
+    const coll_t &cid = i.get_cid(op->cid);
+    dout(5) << __func__ << " CID: " << cid << dendl;
+    ceph_assert(c);
+    dout(5) << __func__ << " post ceph_assert(c) " << dendl;
     std::unique_lock l(c->lock);
     OnodeRef &o = ovec[op->oid];
     if (!o) {
       ghobject_t oid = i.get_oid(op->oid);
+      dout(5) << __func__ << " Oh no we are here " << oid << dendl;
+      dout(5) << __func__ << " OP is " << op->op << dendl;
       o = c->get_onode(oid, create, op->op == Transaction::OP_CREATE);
     }
     if (!create && (!o || !o->exists)) {
@@ -16167,11 +16192,11 @@ int BlueStore::_touch(TransContext *txc,
 		      CollectionRef& c,
 		      OnodeRef& o)
 {
-  dout(15) << __func__ << " " << c->cid << " " << o->oid << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << o->oid << dendl;
   int r = 0;
   _assign_nid(txc, o);
   txc->write_onode(o);
-  dout(10) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
   return r;
 }
 
@@ -17845,7 +17870,7 @@ void BlueStore::_do_truncate(
   TransContext *txc, CollectionRef& c, OnodeRef& o, uint64_t offset,
   set<SharedBlob*> *maybe_unshared_blobs)
 {
-  dout(15) << __func__ << " " << c->cid << " " << o->oid
+  dout(5) << __func__ << " " << c->cid << " " << o->oid
 	   << " 0x" << std::hex << offset << std::dec << dendl;
 
   _dump_onode<30>(cct, *o);
@@ -17924,10 +17949,20 @@ int BlueStore::_do_remove(
   bool is_gen = !o->oid.is_no_gen();
   _do_truncate(txc, c, o, 0, is_gen ? &maybe_unshared_blobs : nullptr);
   if (o->onode.has_omap()) {
+    dout(5) << __func__ << " HAS OMAP" << dendl;
     o->flush();
     _do_omap_clear(txc, o);
   }
+  dout(5) << __func__ << " OID: " << o->oid << dendl;
+  dout(5) << __func__ <<" Before o->exists = false " << dendl;
+  dout(5) << __func__ << " tid=" << std::this_thread::get_id()
+       << " oid=" << o->oid << " exists=" << o->exists
+       << " txc=" << txc << dendl;
   o->exists = false;
+  dout(5) << __func__ <<" After o->exists = false " << dendl;
+  dout(5) << __func__ << " tid=" << std::this_thread::get_id()
+       << " oid=" << o->oid << " exists=" << o->exists
+       << " txc=" << txc << dendl;
   string key;
   for (auto &s : o->extent_map.shards) {
     dout(20) << __func__ << "  removing shard 0x" << std::hex
@@ -18032,7 +18067,7 @@ int BlueStore::_remove(TransContext *txc,
 		       CollectionRef& c,
 		       OnodeRef& o)
 {
-  dout(15) << __func__ << " " << c->cid << " " << o->oid
+  dout(5) << __func__ << " " << c->cid << " " << o->oid
 	   << " onode " << o.get()
 	   << " txc "<< txc << dendl;
  auto start_time = mono_clock::now();
@@ -18052,7 +18087,7 @@ int BlueStore::_remove(TransContext *txc,
     }
   );
 
-  dout(10) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
   return r;
 }
 
@@ -18277,11 +18312,14 @@ int BlueStore::_omap_rmkeys(TransContext *txc,
 			    OnodeRef& o,
 			    bufferlist& bl)
 {
-  dout(15) << __func__ << " " << c->cid << " " << o->oid << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << o->oid << dendl;
   int r = 0;
   auto p = bl.cbegin();
   __u32 num;
   string final_key;
+  dout(5) << __func__ << " tid=" << std::this_thread::get_id()
+       << " oid=" << o->oid << " exists=" << o->exists
+       << " txc=" << txc << dendl;
   if (!o->onode.has_omap()) {
     goto out;
   }
@@ -18304,7 +18342,7 @@ int BlueStore::_omap_rmkeys(TransContext *txc,
   txc->note_modified_object(o);
 
  out:
-  dout(10) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
+  dout(5) << __func__ << " " << c->cid << " " << o->oid << " = " << r << dendl;
   return r;
 }
 
@@ -18683,13 +18721,14 @@ out:
 void BlueStore::_do_remove_collection(TransContext *txc,
 				      CollectionRef *c)
 {
-  dout(5) << __func__ << " remove source" << dendl;
+  dout(5) << __func__ << " remove source " << (*c)->cid << dendl;
   coll_map.erase((*c)->cid);
   txc->removed_collections.push_back(*c);
   (*c)->exists = false;
   _osr_register_zombie((*c)->osr.get());
   txc->t->rmkey(PREFIX_COLL, stringify((*c)->cid));
   c->reset();
+  dout(5) << __func__ << " END" << dendl;
 }
 
 int BlueStore::_split_collection(TransContext *txc,
@@ -18787,6 +18826,7 @@ int BlueStore::_merge_collection(
   {
     std::unique_lock l3(coll_lock);
     _do_remove_collection(txc, c);
+    dout(5) << __func__ << " done with removing collection: " << cid << dendl;
   }
 
   r = 0;
@@ -20648,7 +20688,7 @@ int BlueStore::read_allocation_from_onodes(SimpleBitmap *sbmap, read_alloc_stats
 
     auto key = it->key();
     auto okey = key;
-    dout(20) << __func__ << " decode onode " << pretty_binary_string(key) << dendl;
+    dout(5) << __func__ << " decode onode " << pretty_binary_string(key) << dendl;
     ghobject_t oid;
     if (!is_extent_shard_key(it->key())) {
       int r = get_key_object(okey, &oid);

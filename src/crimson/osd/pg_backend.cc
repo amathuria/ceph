@@ -1689,6 +1689,7 @@ PGBackend::interruptible_future<> PGBackend::omap_remove_key(
   } catch (buffer::error& e) {
     throw crimson::osd::invalid_argument{};
   }
+  logger().debug("Calling omap_rmkeys for {}", coll->get_cid());
   txn.omap_rmkeys(coll->get_cid(), ghobject_t{os.oi.soid}, to_rm_bl);
   // TODO:
   // ctx->clean_regions.mark_omap_dirty();

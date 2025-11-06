@@ -945,6 +945,14 @@ SeaStore::Shard::open_collection(const coll_t& cid)
   });
 }
 
+void
+SeaStore::Shard::cleanup_collection_ref(const coll_t& cid)
+{
+  LOG_PREFIX(SeaStoreS::cleanup_collection_ref);
+  DEBUG("cid={}, not implemented", cid);
+  //TODO
+}
+
 seastar::future<>
 SeaStore::Shard::set_collection_opts(CollectionRef c,
                                         const pool_opts_t& opts)

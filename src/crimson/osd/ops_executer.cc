@@ -790,6 +790,7 @@ OpsExecuter::do_execute_op(OSDOp& osd_op)
     if (!pg.get_pgpool().info.supports_omap()) {
       return crimson::ct_error::operation_not_supported::make();
     }*/
+    logger().debug("{} CEPH_OSD_OP_OMAPRMKEYS called", __func__);
     return do_write_op([&osd_op](auto& backend, auto& os, auto& txn) {
       return backend.omap_remove_key(os, osd_op, txn);
     });

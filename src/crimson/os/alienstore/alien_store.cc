@@ -676,4 +676,13 @@ CollectionRef AlienStore::get_alien_coll_ref(ObjectStore::CollectionHandle c) {
   return ch;
 }
 
+void AlienStore::cleanup_collection_ref(const coll_t& cid) {
+    std::lock_guard l(coll_map_lock);
+    auto it = coll_map.find(cid);
+    if (it != coll_map.end()) {
+      coll_map.erase(it);
+      logger().debug("AlienStore: erased coll_map entry for {}", cid);
+    }
+}
+
 }
