@@ -97,6 +97,8 @@ public:
 
     seastar::future<CollectionRef> open_collection(const coll_t& cid) final;
 
+    void cleanup_collection_ref(const coll_t& cid) final;
+
     seastar::future<> set_collection_opts(
       CollectionRef c,
       const pool_opts_t& opts) final;

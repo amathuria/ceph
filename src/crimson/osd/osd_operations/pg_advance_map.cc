@@ -94,11 +94,26 @@ seastar::future<> PGAdvanceMap::start()
 		       *this, next_epoch);
 	return shard_services.get_map(next_epoch).then(
 	  [this, FNAME] (cached_map_t&& next_map) {
+	    DEBUG("{}: checking for merge here", *this);
+	    return check_for_merges(*from, next_map, rctx).then(
+	      [this, next_map=std::move(next_map), FNAME] (bool stop_merge_source) mutable {
+	      if (stop_merge_source) {
+	        DEBUG("{}: stopping advance due to merge", *this);
+		return seastar::make_exception_future<>(
+                std::runtime_error("merge stop"));
+	      }
 	    DEBUG("{}: advancing map to {}",
 		  *this, next_map->get_epoch());
 	    pg->handle_advance_map(next_map, rctx);
 	    return check_for_splits_and_merges(*from, next_map);
 	  });
+	});
+      }).handle_exception_type([FNAME](const std::runtime_error& e) {
+	if (std::string_view(e.what()) == "merge stop") {
+	  DEBUG("caught merge stop, exiting cleanly");
+	  return seastar::now();  // swallow the exception
+	}
+	return seastar::make_exception_future<>(e); // rethrow unexpected errors
       }).then([this, FNAME] {
 	pg->handle_activate_map(rctx);
 	DEBUG("{}: map activated", *this);
@@ -146,26 +161,65 @@ seastar::future<> PGAdvanceMap::check_for_splits_and_merges(
 	    &children)) {
       co_await split_pg(children, next_map);
     }
-  } else if (new_pg_num && new_pg_num < old_pg_num) {
+  } /* 
+     else if (new_pg_num && new_pg_num < old_pg_num) {
     //std::set<spg_t> merge_sources;
-    /*if (pg->pgid.is_split(
+    if (pg->pgid.is_split(
 	  new_pg_num,
 	  old_pg_num,
 	  &merge_sources)) {
-    */
       DEBUG(" {} Hmm..looks like a merge? ", pg->get_pgid());
       co_await merge_pg(next_map, new_pg_num, old_pg_num);
     //}
-  }
+    */
+  //}
 
   co_return;
 }
 
-seastar::future<> PGAdvanceMap::merge_pg(
-    //std::set<spg_t> merge_sources,
+seastar::future<bool> PGAdvanceMap::check_for_merges(
+    epoch_t old_epoch,
+    cached_map_t next_map,
+    PeeringCtx &rctx)
+{
+  LOG_PREFIX(PGAdvanceMap::check_for_merges);
+  using cached_map_t = OSDMapService::cached_map_t;
+  cached_map_t old_map = co_await shard_services.get_map(old_epoch);
+  if (!old_map->have_pg_pool(pg->get_pgid().pool())) {
+    DEBUG("{} pool doesn't exist in epoch {}", pg->get_pgid(),
+	old_epoch);
+    co_return false;
+  }
+  auto old_pg_num = old_map->get_pg_num(pg->get_pgid().pool());
+  if (!next_map->have_pg_pool(pg->get_pgid().pool())) {
+    DEBUG("{} pool doesn't exist in epoch {}", pg->get_pgid(),
+        next_map->get_epoch());
+    co_return false;
+  }
+  auto new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
+  DEBUG("{} pg_num change in e{} {} -> {}", pg->get_pgid(), next_map->get_epoch(),
+                 old_pg_num, new_pg_num);
+  if (new_pg_num && new_pg_num < old_pg_num) {
+    /*
+    std::set<spg_t> merge_sources;
+    if (pg->pgid.is_split(
+	new_pg_num,
+	old_pg_num,
+        &merge_sources)) {
+    */
+      DEBUG(" {} Hmm..looks like a merge? ", pg->get_pgid());
+      bool merged = co_await merge_pg(next_map, new_pg_num, old_pg_num, rctx);
+      co_return merged;
+    //}
+  }
+
+  co_return false;
+}
+seastar::future<bool> PGAdvanceMap::merge_pg(
     cached_map_t next_map,
     unsigned new_pg_num,
-    unsigned old_pg_num)
+    unsigned old_pg_num,
+    PeeringCtx &rctx)
 {
   LOG_PREFIX(PGAdvanceMap::merge_pg);
   DEBUG("{}: start", *this);
@@ -178,46 +232,67 @@ seastar::future<> PGAdvanceMap::merge_pg(
 	                       new_pg_num,
 			       &parent)) {
     parent.is_split(new_pg_num, old_pg_num, &merge_sources);
+    DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
     DEBUG(" add pg {} to source_pgs", pg->get_pgid());
-    pg->on_shutdown();
-    DEBUG(" called shutdown");
+    //co_await pg->on_shutdown();
     DEBUG(" pg {} is a merge source, register it", pg->get_pgid());
     co_await shard_services.register_merge_source(parent, pg->get_pgid(),
 	                                          merge_sources.size());
-    co_await shard_services.dispatch_context(pg->get_collection_ref(), std::move(rctx));
+    //co_await shard_services.dispatch_context(pg->get_collection_ref(), std::move(rctx));
+    co_return true;
   } else if (pg->pgid.is_merge_target(old_pg_num,
 	                              new_pg_num)) {
+    if (!pg->is_primary()) {
+      DEBUG(" Not Primary PG Bye!!");
+      co_return false;
+    }
+    DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
     DEBUG(" pg {} is a merge target", pg->get_pgid());
     //auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
     //	                                           std::move(merge_sources));
     pg->pgid.is_split(new_pg_num, old_pg_num, &merge_sources);
     auto merge_ready = merge_sources;
-    co_await shard_services.wait_for_merge_sources(pg->get_pgid(),
+    auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
 	                                           std::move(merge_sources));
-    //co_await std::move(fut);
+    co_await std::move(fut);
     DEBUG(" pg {} after wait_for_merge_sources", pg->get_pgid());
     unsigned split_bits = pg->get_pgid().get_split_bits(new_pg_num);
     //auto &s = shard_services.merge_waiter.target_to_source_mapping[pg->get_pgid];
     //source_pgs.swap(s);
     for (auto source : merge_ready) {
       auto source_pg = shard_services.get_pg(source);
-      DEBUG(" after get_pg fo source: {}", source_pg->get_pgid());
+      DEBUG(" after get_pg for source: {}", source_pg->get_pgid());
       source_pgs[source] = source_pg;
     }
     auto sources = std::move(source_pgs);
     co_await pg->merge_from(sources,
 	                    rctx, split_bits,
 			    next_map->get_pg_pool(pg->get_pgid().pool())->last_pg_merge_meta);
+    auto coll_ref = pg->get_collection_ref();
+    // co_await shard_services.get_store().do_transaction(coll_ref, std::move(rctx.transaction));
+    // now safe: perform the cleanup and remove PGs
+    co_await seastar::do_for_each(sources, [this, FNAME](auto& entry) -> seastar::future<> {
+      auto& [pgid, src_pg] = entry;
+      auto src_coll = src_pg->get_collection_ref()->get_cid();
+
+      DEBUG("cleaning up {}", pgid);
+      shard_services.get_store().cleanup_collection_ref(src_coll);
+
+      co_await shard_services.remove_pg(pgid);
+      co_await src_pg->on_shutdown();
+      co_return;
+    });
     // After merge_from, start a PGAdvanceMap operation to update the PG
     // state based on the merged data
-    DEBUG(" {} before PGAdvanceMap", pg->get_pgid());
-    co_await shard_services.start_operation<PGAdvanceMap>(
-      pg, shard_services, next_map->get_epoch(),
-      std::move(rctx), false).second;
-    DEBUG(" {} after PGAdvanceMap", pg->get_pgid());
+    //DEBUG(" {} before PGAdvanceMap", pg->get_pgid());
+    //co_await shard_services.start_operation<PGAdvanceMap>(
+    //  pg, shard_services, next_map->get_epoch(),
+    //  std::move(rctx), false).second;
+    //DEBUG(" {} after PGAdvanceMap", pg->get_pgid());
+    co_return false;
   } else {
     DEBUG(" You are not merge source or target! BYE!");
-    co_return;
+    co_return false;
   }
 }
 

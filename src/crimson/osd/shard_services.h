@@ -490,9 +490,19 @@ public:
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
 
   struct merge_waiter {
-    std::map<spg_t, std::set<spg_t>> target_to_source_mapping;
+    //std::map<spg_t, std::set<spg_t>> target_to_source_mapping;
     std::map<spg_t, std::set<spg_t>> sources_ready;
     std::map<spg_t, seastar::shared_promise<>> target_ready;
+    /*
+    bool target_registered = false;
+
+    seastar::shared_promise<>& ensure_promise(spg_t target) {
+      auto it = target_ready.find(target);
+      if (it == target_ready.end()) {
+	it = target_ready.emplace(target, seastar::shared_promise<>()).first;
+      }
+      return it->second;
+    }*/
   };
   seastar::sharded<merge_waiter> merge_waiters;
 
