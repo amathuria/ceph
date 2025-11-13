@@ -1139,6 +1139,7 @@ bool Client::sub_want_increment(const std::string& what,
                                 version_t start,
                                 unsigned flags)
 {
+  logger().debug("{} for {} epoch {}", __func__, what, start);
   return sub.inc_want(what, start, flags);
 }
 
@@ -1149,6 +1150,7 @@ seastar::future<> Client::renew_subs()
     return seastar::now();
   }
   logger().trace("{}", __func__);
+  logger().debug("{}", __func__);
 
   auto m = crimson::make_message<MMonSubscribe>();
   m->what = sub.get_subs();

@@ -311,12 +311,14 @@ seastar::future<> Heartbeat::maybe_share_osdmap(
 {
   const osd_id_t from = m->get_source().num();
   const epoch_t current_osdmap_epoch = service.get_map()->get_epoch();
+  logger().debug("{} current_osdmap_epoch", __func__, current_osdmap_epoch);
   auto found = peers.find(from);
   if (found == peers.end()) {
     return seastar::now();
   }
   auto& peer = found->second;
-
+  logger().debug(" peer {}, peer projected epoch: {} m->map_epoch: {}",
+    peer, peer.get_projected_epoch(), m->map_epoch);
   if (m->map_epoch > peer.get_projected_epoch()) {
     logger().debug("{} updating peer {} session's projected_epoch"
                    "from {} to ping map epoch of {}",

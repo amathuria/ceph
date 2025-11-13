@@ -1175,6 +1175,7 @@ seastar::future<> OSD::_handle_osd_map(Ref<MOSDMap> m)
   }
   // missing some?
   epoch_t start = superblock.get_newest_map() + 1;
+  DEBUG(" start epoch: {}", start);
   if (first > start) {
     INFO("message skips epochs {}..{}",
 	 start, first - 1);
@@ -1280,18 +1281,21 @@ seastar::future<> OSD::committed_osd_maps(
     INFO("osd.{}: committed_osd_maps: broadcasting osdmaps up"
          " to {} epoch to pgs", whoami, osdmap->get_epoch());
     co_await pg_shard_manager.broadcast_map_to_pgs(osdmap->get_epoch());
+    INFO("broadcasting up to {} epoch is done", osdmap->get_epoch());
   } else {
     if (pg_shard_manager.is_prestop()) {
       got_stop_ack();
     }
   }
-
+  DEBUG("pg_shard_manager.is_stopping() = {}", pg_shard_manager.is_stopping());
+  DEBUG("BEFORE osdmap subscribe to {}", osdmap->get_epoch() + 1);
   if (!pg_shard_manager.is_stopping()) {
     /*
      * TODO: Missing start_waiting_for_healthy() counterpart.
      * Only subscribe to the next map until implemented.
      * See https://tracker.ceph.com/issues/66832
     */
+    DEBUG(" SEE: osdmap subscribe to {}", osdmap->get_epoch() + 1);
     co_await get_shard_services().osdmap_subscribe(osdmap->get_epoch() + 1, false);
   }
   if (pg_shard_manager.is_active()) {

@@ -188,6 +188,7 @@ seastar::future<> OSDSingletonState::osdmap_subscribe(
 {
   LOG_PREFIX(OSDSingletonState::osdmap_subscribe);
   INFO("epoch {}", epoch);
+  INFO("force request? {}", force_request);
   if (monc.sub_want_increment("osdmap", epoch, CEPH_SUBSCRIBE_ONETIME) ||
       force_request) {
     return monc.renew_subs();
@@ -377,7 +378,10 @@ void OSDSingletonState::store_map_bl(
   ceph::os::Transaction& t,
   epoch_t e, bufferlist&& bl)
 {
+  LOG_PREFIX(OSDSingletonState::store_map_bl);
+  DEBUG(" storing osdmap.{}", e);
   meta_coll->store_map(t, e, bl);
+  DEBUG(" stored {} meta_coll", e);
   map_bl_cache.insert(e, std::move(bl));
 }
 
@@ -385,7 +389,10 @@ void OSDSingletonState::store_inc_map_bl(
   ceph::os::Transaction& t,
   epoch_t e, bufferlist&& bl)
 {
+  LOG_PREFIX(OSDSingletonState::store_inc_map_bl);
+  DEBUG(" storing osdmap.{}", e);
   meta_coll->store_inc_map(t, e, bl);
+  DEBUG(" stored {} in meta_coll", e);
   inc_map_bl_cache.insert(e, std::move(bl));
 }
 
@@ -843,6 +850,7 @@ seastar::future<MURef<MOSDMap>> OSDSingletonState::build_incremental_map_msg(
   epoch_t last)
 {
   LOG_PREFIX(OSDSingletonState::build_incremental_map_msg);
+  DEBUG(" first {} last {}", first, last);
   return seastar::do_with(crimson::common::local_conf()->osd_map_message_max,
                           crimson::make_message<MOSDMap>(
                             monc.get_fsid(),
@@ -858,6 +866,7 @@ seastar::future<MURef<MOSDMap>> OSDSingletonState::build_incremental_map_msg(
       // we don't have the next map the target wants,
       // so start with a full map.
       first = superblock.cluster_osdmap_trim_lower_bound;
+      DEBUG("going to load_map_bl got {}", first);
       maybe_handle_mapgap = load_map_bl(first).then(
       [&first, &map_message_max, &m](auto&& bl) {
         m->maps[first] = std::move(bl);
@@ -865,12 +874,14 @@ seastar::future<MURef<MOSDMap>> OSDSingletonState::build_incremental_map_msg(
         ++first;
       });
     }
-    return maybe_handle_mapgap.then([this, first, last, &map_message_max, &m] {
+    return maybe_handle_mapgap.then([this, FNAME, first, last, &map_message_max, &m] {
       if (first > last) {
         // first may be later than last in the case of map gap
+        DEBUG(" there is a mapgap! {} > {} ", first, last);
         ceph_assert(!m->maps.empty());
         return seastar::make_ready_future<MURef<MOSDMap>>(std::move(m));
       }
+      DEBUG(" going to load_map_bls");
       return load_map_bls(
         first,
         ((last - first) > map_message_max) ? (first + map_message_max) : last
@@ -917,13 +928,14 @@ seastar::future<> OSDSingletonState::send_incremental_map_to_osd(
   int osd,
   epoch_t first)
 {
-  LOG_PREFIX(OSDSingletonState::send_incremental_map);
+  LOG_PREFIX(OSDSingletonState::send_incremental_map_to_osd);
   if (osdmap->is_down(osd)) {
     INFO("osd.{} is_down", osd);
     return seastar::now();
   } else {
     auto conn = cluster_msgr.connect(
       osdmap->get_cluster_addrs(osd).front(), CEPH_ENTITY_TYPE_OSD);
+    DEBUG(" sending {} to osd.{}", first, osd);
     return send_incremental_map(*conn, first);
   }
 }
