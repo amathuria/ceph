@@ -137,7 +137,7 @@ public:
 
     virtual seastar::future<> set_collection_opts(CollectionRef c,
                                         const pool_opts_t& opts) = 0;
-    virtual void cleanup_collection_ref(const coll_t& cid) = 0;
+    virtual seastar::future<> cleanup_collection_ref(const coll_t& cid) = 0;
 
   protected:
     virtual seastar::future<> do_transaction_no_callbacks(

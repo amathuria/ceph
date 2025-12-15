@@ -676,6 +676,7 @@ CollectionRef AlienStore::get_alien_coll_ref(ObjectStore::CollectionHandle c) {
   return ch;
 }
 
+/*
 void AlienStore::cleanup_collection_ref(const coll_t& cid) {
     std::lock_guard l(coll_map_lock);
     auto it = coll_map.find(cid);
@@ -683,6 +684,28 @@ void AlienStore::cleanup_collection_ref(const coll_t& cid) {
       coll_map.erase(it);
       logger().debug("AlienStore: erased coll_map entry for {}", cid);
     }
+}
+*/
+
+seastar::future<> AlienStore::cleanup_collection_ref(const coll_t& cid) {
+  logger().debug("{}", __func__);
+
+  // FIX: Move the map erasure INSIDE the lambda.
+  // This forces the CollectionRef destruction to run SYNCHRONOUSLY on the Alien thread.
+  return tp->submit(cid.hash_to_shard(tp->size()), [this, cid] {
+      std::lock_guard l(coll_map_lock);
+      auto it = coll_map.find(cid);
+
+      if (it != coll_map.end()) {
+        // By erasing here, we destroy the shared_ptr<AlienCollection> on the Alien thread.
+        // This acts as a hard barrier: the handle CANNOT be destroyed
+        // until the Alien thread reaches this line of code.
+        coll_map.erase(it);
+        logger().debug("AlienStore: erased coll_map entry for {}", cid);
+      }
+
+      // Implicit return void;
+  });
 }
 
 }

@@ -233,12 +233,9 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
 			       &parent)) {
     parent.is_split(new_pg_num, old_pg_num, &merge_sources);
     DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
-    DEBUG(" add pg {} to source_pgs", pg->get_pgid());
-    //co_await pg->on_shutdown();
     DEBUG(" pg {} is a merge source, register it", pg->get_pgid());
     co_await shard_services.register_merge_source(parent, pg->get_pgid(),
 	                                          merge_sources.size());
-    //co_await shard_services.dispatch_context(pg->get_collection_ref(), std::move(rctx));
     co_return true;
   } else if (pg->pgid.is_merge_target(old_pg_num,
 	                              new_pg_num)) {
@@ -248,8 +245,6 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
     }
     DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
     DEBUG(" pg {} is a merge target", pg->get_pgid());
-    //auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
-    //	                                           std::move(merge_sources));
     pg->pgid.is_split(new_pg_num, old_pg_num, &merge_sources);
     auto merge_ready = merge_sources;
     auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
@@ -257,8 +252,6 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
     co_await std::move(fut);
     DEBUG(" pg {} after wait_for_merge_sources", pg->get_pgid());
     unsigned split_bits = pg->get_pgid().get_split_bits(new_pg_num);
-    //auto &s = shard_services.merge_waiter.target_to_source_mapping[pg->get_pgid];
-    //source_pgs.swap(s);
     for (auto source : merge_ready) {
       auto source_pg = shard_services.get_pg(source);
       DEBUG(" after get_pg for source: {}", source_pg->get_pgid());
@@ -269,19 +262,22 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
 	                    rctx, split_bits,
 			    next_map->get_pg_pool(pg->get_pgid().pool())->last_pg_merge_meta);
     auto coll_ref = pg->get_collection_ref();
-    // co_await shard_services.get_store().do_transaction(coll_ref, std::move(rctx.transaction));
-    // now safe: perform the cleanup and remove PGs
-    co_await seastar::do_for_each(sources, [this, FNAME](auto& entry) -> seastar::future<> {
+    auto map = next_map;
+    epoch_t epoch_sent = map->get_epoch();
+    epoch_t epoch_requested = epoch_sent; // or the epoch you want to request
+    for (auto& entry : sources) {
       auto& [pgid, src_pg] = entry;
       auto src_coll = src_pg->get_collection_ref()->get_cid();
 
-      DEBUG("cleaning up {}", pgid);
-      shard_services.get_store().cleanup_collection_ref(src_coll);
+      DEBUG("{}: cleaning up {}", FNAME, pgid);
 
+      // 1. Wait for the store to confirm it's done with the collection
+      co_await shard_services.get_store().cleanup_collection_ref(src_coll);
+
+      // 2. Remove the PG from Crimson's memory
       co_await shard_services.remove_pg(pgid);
       co_await src_pg->on_shutdown();
-      co_return;
-    });
+    }
     // After merge_from, start a PGAdvanceMap operation to update the PG
     // state based on the merged data
     //DEBUG(" {} before PGAdvanceMap", pg->get_pgid());
