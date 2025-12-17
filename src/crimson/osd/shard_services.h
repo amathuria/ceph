@@ -492,7 +492,7 @@ public:
   struct merge_waiter {
     //std::map<spg_t, std::set<spg_t>> target_to_source_mapping;
     std::map<spg_t, std::set<spg_t>> sources_ready;
-    std::map<spg_t, seastar::shared_promise<>> target_ready;
+    std::map<spg_t, std::unique_ptr<seastar::shared_promise<>>> target_ready;
     /*
     bool target_registered = false;
 

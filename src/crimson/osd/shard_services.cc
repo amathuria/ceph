@@ -181,11 +181,13 @@ seastar::future<> ShardServices::register_merge_source(
     [this, target, source, sources_needed, FNAME](merge_waiter& waiter) -> seastar::future<> {
       // 1. Check if we are already done before doing work
       // If the promise is already set, we don't need to do anything.
+      /*
       if (waiter.target_ready.contains(target) && 
           waiter.target_ready[target].available()) {
          DEBUG("Target {} is already ready, ignoring redundant source {}", target, source);
          co_return;
       }
+      */
 
       // add the source to the target's list of sources
       waiter.sources_ready[target].insert(source);
@@ -194,16 +196,22 @@ seastar::future<> ShardServices::register_merge_source(
 
       if (waiter.sources_ready[target].size() == static_cast<size_t>(sources_needed)) {
         DEBUG(" Sources are ready!!");
-        // Double check availability just to be safe, though the top check covers mostly
-        auto& promise = waiter.target_ready[target];
-        if (!promise.available()) {
-            DEBUG(" All sources ready! Setting promise.");
-            promise.set_value();
+        auto& promise_ptr = waiter.target_ready[target];
+        if (!promise_ptr) {
+          // If the waiter hasn't arrived yet, create the promise so they find it ready later
+          promise_ptr = std::make_unique<seastar::shared_promise<>>();
+        }
+
+        if (!promise_ptr->available()) {
+          DEBUG("Setting promise for {}", target);
+          promise_ptr->set_value();
+        } else {
+          DEBUG("Promise for {} was already set.", target);
         }
       }
-
       co_return;
-    });
+  });
+  co_return;
 }
 
 
@@ -218,6 +226,7 @@ seastar::future<> ShardServices::wait_for_merge_sources(
   co_await merge_waiters.invoke_on(target_core,
     [FNAME, target, sources = std::move(sources_needed)]
     (merge_waiter& waiter) mutable -> seastar::future<> {
+      /*
       auto& ready = waiter.sources_ready[target];
       DEBUG("already have {} sources ready for {}", ready.size(), target);
 
@@ -234,7 +243,37 @@ seastar::future<> ShardServices::wait_for_merge_sources(
       auto& p = waiter.target_ready[target];
       DEBUG("sources not ready for {}, still need {}", target, sources.size());
       return p.get_shared_future();
+      */
+      DEBUG("Found {}/{} sources for {}. ", waiter.sources_ready[target].size(), sources.size(), target);
+      if (waiter.sources_ready[target].size() >= sources.size()) {
+        // Cleanup now since we know we are done
+        waiter.sources_ready.erase(target);
+        waiter.target_ready.erase(target);
+        DEBUG("Returning future target {}", target);
+        co_return; // Done!
+      }
+
+      // 2. Wait Case
+      // Ensure the promise exists in the map as a unique_ptr
+      auto& promise_ptr = waiter.target_ready[target];
+      if (!promise_ptr) {
+          promise_ptr = std::make_unique<seastar::shared_promise<>>();
+      }
+
+      DEBUG("Target {}: suspending on shared_future...", target);
+      
+      // CRITICAL CHANGE: co_await the future right here.
+      // This forces the invoke_on to suspend until the specific promise is set.
+      co_await promise_ptr->get_shared_future();
+      
+      // 3. Cleanup after wake-up
+      DEBUG("Target {}: woke up! Cleaning up.", target);
+      waiter.sources_ready.erase(target);
+      waiter.target_ready.erase(target);
+      co_return;
   });
+  DEBUG("Target {} wake-up triggered!", target);
+  co_return;
 }
 
 Ref<PG> PerShardState::get_pg(spg_t pgid)

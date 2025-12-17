@@ -68,9 +68,10 @@ seastar::future<> PGAdvanceMap::start()
   DEBUG("{}: start", *this);
 
   IRef ref = this;
+  auto stop_flag = std::make_shared<bool>(false);
   return enter_stage<>(
     peering_pp(*pg).process
-  ).then([this, FNAME] {
+  ).then([this, stop_flag, FNAME] {
     /*
      * PGAdvanceMap is scheduled at pg creation and when
      * broadcasting new osdmaps to pgs. We are not able to serialize
@@ -89,15 +90,16 @@ seastar::future<> PGAdvanceMap::start()
     return seastar::do_for_each(
       boost::make_counting_iterator(*from + 1),
       boost::make_counting_iterator(to + 1),
-      [this, FNAME](epoch_t next_epoch) {
+      [this, stop_flag, FNAME](epoch_t next_epoch) {
 	DEBUG("{}: start: getting map {}",
 		       *this, next_epoch);
 	return shard_services.get_map(next_epoch).then(
-	  [this, FNAME] (cached_map_t&& next_map) {
+	  [this, stop_flag, FNAME] (cached_map_t&& next_map) {
 	    DEBUG("{}: checking for merge here", *this);
 	    return check_for_merges(*from, next_map, rctx).then(
-	      [this, next_map=std::move(next_map), FNAME] (bool stop_merge_source) mutable {
+	      [this, next_map=std::move(next_map), stop_flag, FNAME] (bool stop_merge_source) mutable {
 	      if (stop_merge_source) {
+          *stop_flag = true; // Mark that we found a merge
 	        DEBUG("{}: stopping advance due to merge", *this);
 		return seastar::make_exception_future<>(
                 std::runtime_error("merge stop"));
@@ -108,13 +110,17 @@ seastar::future<> PGAdvanceMap::start()
 	    return check_for_splits_and_merges(*from, next_map);
 	  });
 	});
-      }).handle_exception_type([FNAME](const std::runtime_error& e) {
+      }).handle_exception_type([stop_flag, FNAME](const std::runtime_error& e) {
 	if (std::string_view(e.what()) == "merge stop") {
 	  DEBUG("caught merge stop, exiting cleanly");
 	  return seastar::now();  // swallow the exception
 	}
 	return seastar::make_exception_future<>(e); // rethrow unexpected errors
-      }).then([this, FNAME] {
+      }).then([this, stop_flag, FNAME] {
+  if (*stop_flag) {
+      DEBUG("{}: skipping activation because merge is in progress", *this);
+      return seastar::now();
+  }
 	pg->handle_activate_map(rctx);
 	DEBUG("{}: map activated", *this);
 	if (do_init) {
@@ -236,20 +242,17 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
     DEBUG(" pg {} is a merge source, register it", pg->get_pgid());
     co_await shard_services.register_merge_source(parent, pg->get_pgid(),
 	                                          merge_sources.size());
+    DEBUG(" RETURN TRUE!!");
     co_return true;
   } else if (pg->pgid.is_merge_target(old_pg_num,
 	                              new_pg_num)) {
-    if (!pg->is_primary()) {
-      DEBUG(" Not Primary PG Bye!!");
-      co_return false;
-    }
     DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
     DEBUG(" pg {} is a merge target", pg->get_pgid());
     pg->pgid.is_split(new_pg_num, old_pg_num, &merge_sources);
     auto merge_ready = merge_sources;
-    auto fut = shard_services.wait_for_merge_sources(pg->get_pgid(),
+    co_await shard_services.wait_for_merge_sources(pg->get_pgid(),
 	                                           std::move(merge_sources));
-    co_await std::move(fut);
+    //co_await std::move(fut);
     DEBUG(" pg {} after wait_for_merge_sources", pg->get_pgid());
     unsigned split_bits = pg->get_pgid().get_split_bits(new_pg_num);
     for (auto source : merge_ready) {
