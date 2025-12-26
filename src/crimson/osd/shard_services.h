@@ -368,6 +368,7 @@ class ShardServices : public OSDMapService {
   friend class OSD;
   using cached_map_t = OSDMapService::cached_map_t;
   using local_cached_map_t = OSDMapService::local_cached_map_t;
+  seastar::sharded<ShardServices>& container;
 
   PerShardState local_state;
   seastar::sharded<OSDSingletonState> &osd_singleton_state;
@@ -480,10 +481,12 @@ private:
 public:
   template <typename... PSSArgs>
   ShardServices(
+    seastar::sharded<ShardServices>& container,
     seastar::sharded<OSDSingletonState> &osd_singleton_state,
     PGShardMapping& pg_to_shard_mapping,
     PSSArgs&&... args)
-    : local_state(std::forward<PSSArgs>(args)...),
+    : container(container),
+      local_state(std::forward<PSSArgs>(args)...),
       osd_singleton_state(osd_singleton_state),
       pg_to_shard_mapping(pg_to_shard_mapping) {}
 
@@ -493,26 +496,10 @@ public:
     //std::map<spg_t, std::set<spg_t>> target_to_source_mapping;
     std::map<spg_t, std::set<spg_t>> sources_ready;
     std::map<spg_t, std::unique_ptr<seastar::shared_promise<>>> target_ready;
-    /*
-    bool target_registered = false;
-
-    seastar::shared_promise<>& ensure_promise(spg_t target) {
-      auto it = target_ready.find(target);
-      if (it == target_ready.end()) {
-	it = target_ready.emplace(target, seastar::shared_promise<>()).first;
-      }
-      return it->second;
-    }*/
+    std::map<spg_t, std::map<spg_t, std::pair<core_id_t, Ref<PG>>>> ready_pgs;
   };
-  seastar::sharded<merge_waiter> merge_waiters;
+  merge_waiter local_merge_waiter;
 
-  seastar::future<> start_merge_waiters() {
-    return merge_waiters.start();
-  }
-
-  seastar::future<> stop_merge_waiters() {
-    return merge_waiters.stop();
-  }
   crimson::os::FuturizedStore::Shard &get_store() {
     return local_state.store;
   }
@@ -647,11 +634,19 @@ public:
       });
   }
 
-
+  // In ShardServices.h
+  seastar::future<> perform_source_cleanup(spg_t target_id);
+  void move_pg_to_shard(spg_t pgid, Ref<PG> pg);
+  Ref<PG> remove_pg_from_shard(spg_t pgid);
+  void apply_register_source(
+    merge_waiter& waiter, 
+    spg_t target, 
+    spg_t source, 
+    int sources_needed);
   seastar::future<> register_merge_source(spg_t target,
                                           spg_t source,
 					  int sources_needed);
-  seastar::future<> wait_for_merge_sources(spg_t target,
+  seastar::future<std::map<spg_t, Ref<PG>>> wait_for_merge_sources(spg_t target,
                                            std::set<spg_t> sources_needed);
 
   FORWARD_TO_OSD_SINGLETON(set_ready_to_merge_source)

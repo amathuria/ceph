@@ -119,6 +119,8 @@ seastar::future<> PGAdvanceMap::start()
       }).then([this, stop_flag, FNAME] {
   if (*stop_flag) {
       DEBUG("{}: skipping activation because merge is in progress", *this);
+      // rctx already contains the merge/activation work from merge_pg
+      //return pg->complete_rctx(std::move(rctx));
       return seastar::now();
   }
 	pg->handle_activate_map(rctx);
@@ -239,6 +241,8 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
 			       &parent)) {
     parent.is_split(new_pg_num, old_pg_num, &merge_sources);
     DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
+    DEBUG(" Source PG {} shutdown to avoid any operations", pg->get_pgid());
+    co_await pg->on_shutdown();
     DEBUG(" pg {} is a merge source, register it", pg->get_pgid());
     co_await shard_services.register_merge_source(parent, pg->get_pgid(),
 	                                          merge_sources.size());
@@ -249,46 +253,42 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
     DEBUG(" Finally on OSD: {}", pg->get_pg_whoami());
     DEBUG(" pg {} is a merge target", pg->get_pgid());
     pg->pgid.is_split(new_pg_num, old_pg_num, &merge_sources);
-    auto merge_ready = merge_sources;
-    co_await shard_services.wait_for_merge_sources(pg->get_pgid(),
-	                                           std::move(merge_sources));
-    //co_await std::move(fut);
-    DEBUG(" pg {} after wait_for_merge_sources", pg->get_pgid());
+    
+    // 1. Gather the Ref<PG> objects across shards
+    auto sources = co_await shard_services.wait_for_merge_sources(pg->get_pgid(), std::move(merge_sources));
+    
+    // 2. Prepare the map-advance metadata
+    //pg->handle_advance_map(next_map, rctx);
+
+    // 3. Execute the data merge on the target
     unsigned split_bits = pg->get_pgid().get_split_bits(new_pg_num);
-    for (auto source : merge_ready) {
-      auto source_pg = shard_services.get_pg(source);
-      DEBUG(" after get_pg for source: {}", source_pg->get_pgid());
-      source_pgs[source] = source_pg;
-    }
-    auto sources = std::move(source_pgs);
-    co_await pg->merge_from(sources,
-	                    rctx, split_bits,
-			    next_map->get_pg_pool(pg->get_pgid().pool())->last_pg_merge_meta);
-    auto coll_ref = pg->get_collection_ref();
-    auto map = next_map;
-    epoch_t epoch_sent = map->get_epoch();
-    epoch_t epoch_requested = epoch_sent; // or the epoch you want to request
-    for (auto& entry : sources) {
-      auto& [pgid, src_pg] = entry;
-      auto src_coll = src_pg->get_collection_ref()->get_cid();
+    const auto& merge_meta = next_map->get_pg_pool(pg->get_pgid().pool())->last_pg_merge_meta;
+    DEBUG(" GOT {} SOURCES", sources.size());
+    co_await pg->merge_from(sources, rctx, split_bits, merge_meta);
 
-      DEBUG("{}: cleaning up {}", FNAME, pgid);
+    pg->handle_advance_map(next_map, rctx);
+     // 6. Commit Part 2: Peering Activation
+    // Using a fresh context as you requested
+    DEBUG("Proceeding to activation on target...");
+    //PeeringCtx fresh_rctx; 
+    pg->handle_activate_map(rctx); 
+    co_await pg->complete_rctx(std::move(rctx));
 
-      // 1. Wait for the store to confirm it's done with the collection
-      co_await shard_services.get_store().cleanup_collection_ref(src_coll);
+    
 
-      // 2. Remove the PG from Crimson's memory
-      co_await shard_services.remove_pg(pgid);
-      co_await src_pg->on_shutdown();
-    }
-    // After merge_from, start a PGAdvanceMap operation to update the PG
-    // state based on the merged data
-    //DEBUG(" {} before PGAdvanceMap", pg->get_pgid());
-    //co_await shard_services.start_operation<PGAdvanceMap>(
-    //  pg, shard_services, next_map->get_epoch(),
-    //  std::move(rctx), false).second;
-    //DEBUG(" {} after PGAdvanceMap", pg->get_pgid());
-    co_return false;
+    // 5. Commit Part 1: The Merge/Cleanup Transaction
+    // This clears the rctx and commits the work done in merge_from
+    //DEBUG("Committing disk cleanup transaction...");
+    //co_await pg->complete_rctx(std::move(rctx)); 
+
+    // 4. Perform the "Dangerous" cleanup via ShardServices
+    // This handles Store cleanup and prepares the sources for cross-shard destruction.
+    // We pass the sources map; ShardServices will take ownership.
+    co_await shard_services.perform_source_cleanup(pg->get_pgid());
+
+   
+    //DEBUG("Target PG merge and peering activation complete.");
+    co_return true;
   } else {
     DEBUG(" You are not merge source or target! BYE!");
     co_return false;

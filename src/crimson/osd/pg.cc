@@ -1838,6 +1838,7 @@ seastar::future<> PG::merge_from(
 {
   LOG_PREFIX(PG::merge_from);
   DEBUG("target {}", get_pgid());
+  DEBUG(" Number of sources: {}", sources.size());
 
   std::map<spg_t, PeeringState*> source_states;
   for (auto& [pgid, src_pg] : sources) {
@@ -1847,15 +1848,6 @@ seastar::future<> PG::merge_from(
   // synchronous peering-state merge that must append omap ops
   peering_state.merge_from(source_states, rctx, split_bits, last_pg_merge_meta);
 
-  // FIX: Update the Target PG's bits FIRST.
-  // This tells BlueStore: "PG 2.7 now owns a wider hash range."
-  // We must do this BEFORE moving objects into it, so validation succeeds.
-  //rctx.transaction.collection_set_bits(coll_ref->get_cid(), split_bits);
-
-  //snap_mapper.update_bits(split_bits);
-  //co_await shard_services.get_store().do_transaction(coll_ref, rctx.transaction.claim_and_reset());
-
-  // append remove/merge ops to rctx.transaction
   co_await seastar::do_for_each(sources, [&](auto& entry) -> seastar::future<> {
     auto& [pgid, src_pg] = entry;
     auto src_coll = src_pg->get_collection_ref()->get_cid();
