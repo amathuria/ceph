@@ -5,6 +5,7 @@ overrides:
     - objects unfound and apparently lost
     conf:
       osd:
+        osd target transaction size: 5
         osd debug reject backfill probability: .3
         osd scrub min interval: 60
         osd scrub max interval: 120

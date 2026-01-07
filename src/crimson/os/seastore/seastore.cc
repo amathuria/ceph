@@ -1490,6 +1490,7 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
 	     ctx.ext_transaction.get_num_bytes(),
 	     ctx.iter.colls.size(),
 	     ctx.iter.objects.size());
+      DEBUGT(" retry number = {}", t, shard_stats.repeat_io_num);
 
       ctx.reset_preserve_handle(*transaction_manager);
       std::vector<OnodeRef> onodes(ctx.iter.objects.size());
@@ -1497,7 +1498,7 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
 	co_await _do_transaction_step(
 	  ctx, ctx.ch, onodes, ctx.iter);
       }
-
+      DEBUGT(" submitting transaction now...", t);
       co_await transaction_manager->submit_transaction(*ctx.transaction);
     })
   ).handle_error(
@@ -2391,14 +2392,16 @@ seastar::future<> SeaStore::Shard::write_meta(
   const std::string& key,
   const std::string& value)
 {
+  LOG_PREFIX(SeaStore::write_meta);
   ++(shard_stats.io_num);
   ++(shard_stats.pending_io_num);
   // For TM::submit_transaction()
   ++(shard_stats.processing_inlock_io_num);
 
-  return repeat_eagain([this, &key, &value] {
+  return repeat_eagain([this, FNAME, &key, &value] {
     ++(shard_stats.repeat_io_num);
-
+    DEBUG("write_meta attempt, retry_num={}, key={}", 
+           shard_stats.repeat_io_num, key);
     return transaction_manager->with_transaction_intr(
       Transaction::src_t::MUTATE,
       "write_meta",
