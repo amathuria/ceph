@@ -75,11 +75,13 @@ seastar::future<> PeeringEvent<T>::with_pg(
   }
   DEBUGI("start");
 
-  return interruptor::with_interruption([this, pg, &shard_services] {
+  return interruptor::with_interruption([this, FNAME, pg, &shard_services] {
     LOG_PREFIX(PeeringEvent<T>::with_pg);
     DEBUGI("{} {}: pg present", interruptor::get_interrupt_cond(), *this);
     return this->template enter_stage<interruptor>(peering_pp(*pg).await_map
-    ).then_interruptible([this, pg] {
+    ).then_interruptible([this, FNAME, pg] {
+      DEBUGI("at map_gate: evt_epoch={}, pg_epoch={}", 
+             evt.get_epoch_sent(), pg->get_osdmap_epoch());
       return this->template with_blocking_event<
 	PG_OSDMapGate::OSDMapBlocker::BlockingEvent
 	>([this, pg](auto &&trigger) {
@@ -87,8 +89,11 @@ seastar::future<> PeeringEvent<T>::with_pg(
 	    std::move(trigger), evt.get_epoch_sent());
 	});
     }).then_interruptible([this, pg](auto) {
+      LOG_PREFIX(PeeringEvent<T>::with_pg);
+      DEBUGI("{} attempting process stage", *this);
       return this->template enter_stage<interruptor>(peering_pp(*pg).process);
-    }).then_interruptible([this, pg, &shard_services] {
+    }).then_interruptible([this, FNAME, pg, &shard_services] {
+    LOG_PREFIX(PeeringEvent<T>::with_pg);
       /* The DeleteSome event invokes PeeringListener::do_delete_work, which
        * needs to return (without a future) the object to start with on the next
        * call.  As a consequence, crimson's do_delete_work implementation needs
@@ -102,10 +107,17 @@ seastar::future<> PeeringEvent<T>::with_pg(
        * now, but we'll want to remove that as well.
        * https://tracker.ceph.com/issues/66708
        */
+      DEBUGI("{} entered process stage", *this);
       return interruptor::async([this, pg, &shard_services] {
+    LOG_PREFIX(PeeringEvent<T>::with_pg);
+  DEBUGI("{} inside async block: starting do_peering_event", *this);
 	pg->do_peering_event(evt, ctx);
+  DEBUGI("{} async block: do_peering_event finished, starting complete_rctx", *this);
 	complete_rctx(shard_services, pg).get();
+  DEBUGI("{} async block: finished all work", *this);
       }).then_interruptible([this] {
+    LOG_PREFIX(PeeringEvent<T>::with_pg);
+  DEBUGI("{} calling handle.complete()", *this);
 	return that()->get_handle().complete();
       });
     });
