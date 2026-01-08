@@ -514,6 +514,16 @@ public:
 
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
 
+  struct merge_waiter {
+    // target_pg -> set of source pgids that are ready for merge
+    std::map<spg_t, std::set<spg_t>> sources_ready;
+    // target_pg -> promise that fulfills when all sources are in ready_pgs
+    std::map<spg_t, std::unique_ptr<seastar::shared_promise<>>> target_ready;
+    // target_pg -> map<source_pg_id, pair<birth_shard, Ref<PG>>>
+    std::map<spg_t, std::map<spg_t, std::pair<core_id_t, Ref<PG>>>> ready_pgs;
+  };
+  merge_waiter local_merge_waiter;
+
   crimson::os::FuturizedStore::Shard &get_store() {
     return local_state.store;
   }
@@ -527,6 +537,10 @@ public:
 
   auto create_split_pg_mapping(spg_t pgid, core_id_t core) {
     return pg_to_shard_mapping.get_or_create_pg_mapping(pgid, core);
+  }
+
+  seastar::future<core_id_t> get_pg_mapping(spg_t pgid) {
+    return pg_to_shard_mapping.get_or_create_pg_mapping(pgid);
   }
 
   auto remove_pg(spg_t pgid) {
@@ -643,6 +657,20 @@ public:
 	return make_local_shared_foreign(std::move(fmap));
       });
   }
+
+  seastar::future<> perform_source_cleanup(spg_t target_id);
+  void move_pg_to_shard(spg_t pgid, Ref<PG> pg);
+  Ref<PG> remove_pg_from_shard(spg_t pgid);
+  void apply_register_source(
+    merge_waiter& waiter,
+    spg_t target,
+    spg_t source,
+    int sources_needed);
+  seastar::future<> register_merge_source(spg_t target,
+                                          spg_t source,
+					  int sources_needed);
+  seastar::future<std::map<spg_t, Ref<PG>>> wait_for_merge_sources(spg_t target,
+                                           std::set<spg_t> sources_needed);
 
   FORWARD_TO_OSD_SINGLETON(set_ready_to_merge_source)
   FORWARD_TO_OSD_SINGLETON(set_ready_to_merge_target)
