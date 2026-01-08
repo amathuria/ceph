@@ -462,6 +462,7 @@ seastar::future<> OSD::start()
     }).then([this] {
       ceph::mono_time startup_time = ceph::mono_clock::now();
       return shard_services.start(
+        std::ref(shard_services),
         std::ref(osd_singleton_state),
         std::ref(pg_to_shard_mappings),
         whoami,

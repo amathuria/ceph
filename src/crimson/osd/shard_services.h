@@ -380,6 +380,17 @@ class ShardServices : public OSDMapService {
   friend class OSD;
   using cached_map_t = OSDMapService::cached_map_t;
   using local_cached_map_t = OSDMapService::local_cached_map_t;
+  /*
+   * Required for pg merging
+   * Holds a reference to ShardServices in order to invoke
+   * operations on other shards.
+   *
+   * The target pg's shard uses this to send the source pg
+   * handles back to their original shard for destruction.
+   * It ensures that the pg's memory is freed on the same
+   * core where it was created.
+   */
+  seastar::sharded<ShardServices>& shard_manager;
 
   PerShardState local_state;
   seastar::sharded<OSDSingletonState> &osd_singleton_state;
@@ -492,10 +503,12 @@ private:
 public:
   template <typename... PSSArgs>
   ShardServices(
+    seastar::sharded<ShardServices>& shard_manager,
     seastar::sharded<OSDSingletonState> &osd_singleton_state,
     PGShardMapping& pg_to_shard_mapping,
     PSSArgs&&... args)
-    : local_state(std::forward<PSSArgs>(args)...),
+    : shard_manager(shard_manager),
+      local_state(std::forward<PSSArgs>(args)...),
       osd_singleton_state(osd_singleton_state),
       pg_to_shard_mapping(pg_to_shard_mapping) {}
 
