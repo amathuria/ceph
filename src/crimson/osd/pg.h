@@ -413,6 +413,15 @@ public:
 
   void on_removal(ceph::os::Transaction &t) final;
 
+  seastar::future<> on_shutdown() {
+    context_registry_on_change();
+    co_await stop();
+    clear_primary_state();
+    if (is_primary())
+      clear_ready_to_merge();
+    co_return;
+  }
+
   void clear_log_entry_maps();
 
   std::pair<ghobject_t, bool>
