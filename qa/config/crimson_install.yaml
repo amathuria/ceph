@@ -7,6 +7,11 @@ tasks:
       rpm:
         - ceph-osd-crimson
         - ceph-osd-crimson-debuginfo
+    extra_system_packages:
+      deb:
+        - wget
+      rpm:
+        - wget
 - pexec:
     all:
       - sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd-crimson
