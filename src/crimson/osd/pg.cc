@@ -963,6 +963,18 @@ void PG::enqueue_delete_for_backfill(
   assert(recovery_handler);
   assert(recovery_handler->backfill_state);
   auto backfill_state = recovery_handler->backfill_state.get();
+  // Clear peer_missing entries for the given deleted object. These peer_missing entries
+  // were added previously by prepare_backfill_for_missing() when the object was enqueued for push. 
+  // Why is this needed? 
+  // Since the object was deleted before it could be backfilled on peers, we do not need to 
+  // backfill the object anymore. This means the peer_missing entry is no more valid and 
+  // needs to be deleted. 
+  for (auto &peer : peers) {
+    pg_missing_item item;
+    if (peering_state.get_peer_missing(peer).is_missing(obj, &item)) {
+      peering_state.on_peer_recover(peer, obj, item.need);
+    }
+  }
   backfill_state->enqueue_standalone_delete(obj, v, peers);
 }
 
