@@ -4,6 +4,8 @@
 #include "seastore.h"
 
 #include <algorithm>
+#include <chrono>
+#include <fstream>
 
 #include <boost/algorithm/string/trim.hpp>
 #include <fmt/format.h>
@@ -1612,6 +1614,34 @@ SeaStore::Shard::_do_transaction_step(
   }
   if (!onodes[op->oid]) {
     const ghobject_t& oid = i.get_oid(op->oid);
+    coll_t cid = i.get_cid(op->cid);
+    // #region agent log
+    {
+      std::ofstream out(
+        "/home/aishwaryamathuria/ceph/.cursor/debug.log",
+        std::ios::app);
+      if (out) {
+        auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count();
+        out << "{"
+            << "\"id\":\"onode_access\","
+            << "\"runId\":\"pre-fix-2\","
+            << "\"hypothesisId\":\"B\","
+            << "\"location\":\"seastore.cc:1617\","
+            << "\"message\":\"onode access attempt\","
+            << "\"data\":{"
+            << "\"op\":" << static_cast<int>(op->op)
+            << ",\"cid\":\"" << cid.to_str() << "\""
+            << ",\"oid\":\"" << oid.hobj.to_str() << "\""
+            << ",\"create\":" << (create ? "true" : "false")
+            << "},"
+            << "\"timestamp\":" << ts
+            << "}"
+            << std::endl;
+      }
+    }
+    // #endregion
     if (!create) {
       DEBUGT("op {}, get oid={} ...",
              *ctx.transaction, (uint32_t)op->op, oid);
@@ -1657,6 +1687,32 @@ SeaStore::Shard::_do_transaction_step(
       case Transaction::OP_REMOVE:
       {
         DEBUGT("op REMOVE, oid={} ...", *ctx.transaction, oid);
+        // #region agent log
+        {
+          coll_t cid = i.get_cid(op->cid);
+          std::ofstream out(
+            "/home/aishwaryamathuria/ceph/.cursor/debug.log",
+            std::ios::app);
+          if (out) {
+            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
+            out << "{"
+                << "\"id\":\"onode_remove\","
+                << "\"runId\":\"pre-fix-2\","
+                << "\"hypothesisId\":\"B\","
+                << "\"location\":\"seastore.cc:1661\","
+                << "\"message\":\"onode remove\","
+                << "\"data\":{"
+                << "\"cid\":\"" << cid.to_str() << "\""
+                << ",\"oid\":\"" << oid.hobj.to_str() << "\""
+                << "},"
+                << "\"timestamp\":" << ts
+                << "}"
+                << std::endl;
+          }
+        }
+        // #endregion
         return _remove(ctx, onode
 	).si_then([&onode] {
 	  onode.reset();
@@ -1669,6 +1725,33 @@ SeaStore::Shard::_do_transaction_step(
                *ctx.transaction,
                op->op == Transaction::OP_CREATE ? "CREATE" : "TOUCH",
                oid);
+        // #region agent log
+        {
+          coll_t cid = i.get_cid(op->cid);
+          std::ofstream out(
+            "/home/aishwaryamathuria/ceph/.cursor/debug.log",
+            std::ios::app);
+          if (out) {
+            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch())
+                .count();
+            out << "{"
+                << "\"id\":\"onode_create\","
+                << "\"runId\":\"pre-fix-2\","
+                << "\"hypothesisId\":\"B\","
+                << "\"location\":\"seastore.cc:1670\","
+                << "\"message\":\"onode create/touch\","
+                << "\"data\":{"
+                << "\"op\":" << static_cast<int>(op->op)
+                << ",\"cid\":\"" << cid.to_str() << "\""
+                << ",\"oid\":\"" << oid.hobj.to_str() << "\""
+                << "},"
+                << "\"timestamp\":" << ts
+                << "}"
+                << std::endl;
+          }
+        }
+        // #endregion
         return _touch(ctx, *onode);
       }
       case Transaction::OP_WRITE:
@@ -1842,7 +1925,35 @@ SeaStore::Shard::_do_transaction_step(
     }
   }).handle_error_interruptible(
     tm_iertr::pass_further{},
-    crimson::ct_error::enoent::handle([op] {
+    crimson::ct_error::enoent::handle([op, &ctx, &i] {
+      // #region agent log
+      {
+        std::ofstream out(
+          "/home/aishwaryamathuria/ceph/.cursor/debug.log",
+          std::ios::app);
+        if (out) {
+          auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::system_clock::now().time_since_epoch())
+              .count();
+          const ghobject_t& oid = i.get_oid(op->oid);
+          coll_t cid = i.get_cid(op->cid);
+          out << "{"
+              << "\"id\":\"seastore_enoent_1\","
+              << "\"runId\":\"pre-fix-1\","
+              << "\"hypothesisId\":\"A\","
+              << "\"location\":\"seastore.cc:1847\","
+              << "\"message\":\"enoent in do_transaction_step\","
+              << "\"data\":{"
+              << "\"op\":" << static_cast<int>(op->op)
+              << ",\"cid\":\"" << cid.to_str() << "\""
+              << ",\"oid\":\"" << oid.hobj.to_str() << "\""
+              << "},"
+              << "\"timestamp\":" << ts
+              << "}"
+              << std::endl;
+        }
+      }
+      // #endregion
       //OMAP_CLEAR, TRUNCATE, REMOVE etc ops will tolerate absent onode.
       if (op->op == Transaction::OP_CLONERANGE ||
           op->op == Transaction::OP_CLONE ||
