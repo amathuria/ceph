@@ -482,6 +482,10 @@ PG::do_delete_work(ceph::os::Transaction &t, ghobject_t _next)
 {
   LOG_PREFIX(PG::do_delete_work);
   DEBUGDPP("removing pg {}", *this, pgid);
+  // #region agent log
+  DEBUGDPP("[split-thrash] do_delete_work_start cid={} next={}",
+    *this, coll_ref->get_cid().to_str(), _next);
+  // #endregion
   auto fut = interruptor::make_interruptible(
     shard_services.get_store().list_objects(
       coll_ref,
@@ -490,6 +494,11 @@ PG::do_delete_work(ceph::os::Transaction &t, ghobject_t _next)
       local_conf()->osd_target_transaction_size));
 
   auto [objs_to_rm, next] = fut.get();
+  // #region agent log
+  DEBUGDPP("[split-thrash] do_delete_work_list_result num_objs={} next={} first_oid={}",
+    *this, objs_to_rm.size(), next,
+    objs_to_rm.empty() ? ghobject_t{} : objs_to_rm[0]);
+  // #endregion
   if (objs_to_rm.empty()) {
     DEBUGDPP("all objs removed, removing coll for {}", *this, pgid);
     t.remove(coll_ref->get_cid(), pgid.make_snapmapper_oid());
@@ -507,7 +516,7 @@ PG::do_delete_work(ceph::os::Transaction &t, ghobject_t _next)
       if (obj == pgmeta_oid || obj.is_internal_pg_local()) {
         continue;
       }
-      TRACEDPP("pg {}, removing obj {}", *this, pgid, obj);
+      DEBUGDPP("pg {}, removing obj {}", *this, pgid, obj);
       t.remove(coll_ref->get_cid(), obj);
     }
     t.register_on_commit(

@@ -4,8 +4,6 @@
 #include "seastore.h"
 
 #include <algorithm>
-#include <chrono>
-#include <fstream>
 
 #include <boost/algorithm/string/trim.hpp>
 #include <fmt/format.h>
@@ -721,14 +719,20 @@ seastar::future<> SeaStore::report_stats()
 TransactionManager::read_extent_iertr::future<std::optional<unsigned>>
 SeaStore::Shard::get_coll_bits(CollectionRef ch, Transaction &t) const
 {
+  LOG_PREFIX(SeaStoreS::get_coll_bits);
   return transaction_manager->read_collection_root(t)
     .si_then([this, ch, &t](auto coll_root) {
       return collection_manager->list(coll_root, t);
-    }).si_then([ch](auto colls) {
+    }).si_then([ch, FNAME](auto colls) {
       auto it = std::find_if(colls.begin(), colls.end(),
         [ch](const std::pair<coll_t, coll_info_t>& element) {
           return element.first == ch->get_cid();
       });
+      // #region agent log
+      INFO("[split-thrash] get_coll_bits cid={} bits={}",
+        ch->get_cid().to_str(),
+        it != colls.end() ? std::to_string(it->second.split_bits) : "null");
+      // #endregion
       if (it != colls.end()) {
         return TransactionManager::read_extent_iertr::make_ready_future<
           std::optional<unsigned>>(it->second.split_bits);
@@ -822,6 +826,11 @@ SeaStore::Shard::list_objects(CollectionRef ch,
   ++(shard_stats.pending_read_num);
 
   ceph_assert(start <= end);
+  LOG_PREFIX(SeaStoreS::list_objects);
+  // #region agent log
+  INFO("[split-thrash] list_objects_entry cid={} start={} end={} limit={}",
+    ch->get_cid().to_str(), start, end, limit);
+  // #endregion
   using list_iertr = OnodeManager::list_onodes_iertr;
   using RetType = typename OnodeManager::list_onodes_bare_ret;
   return seastar::do_with(
@@ -853,6 +862,11 @@ SeaStore::Shard::list_objects(CollectionRef ch,
           } else {
 	    DEBUGT("bits={} ...", t, *bits);
             auto filter = SeaStore::get_objs_range(ch, *bits);
+            // #region agent log
+            INFO("[split-thrash] list_objects_range cid={} bits={} obj_begin={} obj_end={}",
+              ch->get_cid().to_str(), *bits,
+              filter.obj_begin, filter.obj_end);
+            // #endregion
 	    using list_iertr = OnodeManager::list_onodes_iertr;
 	    using repeat_ret = list_iertr::future<seastar::stop_iteration>;
             return trans_intr::repeat(
@@ -895,9 +909,17 @@ SeaStore::Shard::list_objects(CollectionRef ch,
 		    >(seastar::stop_iteration::no);
 		});
 	      }
-            ).si_then([&ret, FNAME] {
+            ).si_then([&ret, FNAME, ch] {
               DEBUG("got {} objects, next={}",
                     std::get<0>(ret).size(), std::get<1>(ret));
+              // #region agent log
+              {
+                const auto& objs = std::get<0>(ret);
+                INFO("[split-thrash] list_objects_result cid={} num_objects={} next={} first_oid={}",
+                  ch->get_cid().to_str(), objs.size(), std::get<1>(ret),
+                  objs.empty() ? ghobject_t{} : objs.front());
+              }
+              // #endregion
               return list_iertr::make_ready_future<
                 OnodeManager::list_onodes_bare_ret>(std::move(ret));
             });
@@ -1598,6 +1620,10 @@ SeaStore::Shard::_do_transaction_step(
       coll_t dest_cid = i.get_cid(op->dest_cid);
       DEBUGT("op OP_SPLIT_COLLECTION2, cid={}, dest_cid={}, bits={}",
 	*ctx.transaction, cid, dest_cid, bits);
+      // #region agent log
+      INFO("[split-thrash] op_split_collection2 parent_cid={} child_cid={} bits={}",
+        cid.to_str(), dest_cid.to_str(), bits);
+      // #endregion
       return _split_collection(ctx, cid, bits);
     }
   }
@@ -1616,31 +1642,8 @@ SeaStore::Shard::_do_transaction_step(
     const ghobject_t& oid = i.get_oid(op->oid);
     coll_t cid = i.get_cid(op->cid);
     // #region agent log
-    {
-      std::ofstream out(
-        "/home/aishwaryamathuria/ceph/.cursor/debug.log",
-        std::ios::app);
-      if (out) {
-        auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
-            .count();
-        out << "{"
-            << "\"id\":\"onode_access\","
-            << "\"runId\":\"pre-fix-2\","
-            << "\"hypothesisId\":\"B\","
-            << "\"location\":\"seastore.cc:1617\","
-            << "\"message\":\"onode access attempt\","
-            << "\"data\":{"
-            << "\"op\":" << static_cast<int>(op->op)
-            << ",\"cid\":\"" << cid.to_str() << "\""
-            << ",\"oid\":\"" << oid.hobj.to_str() << "\""
-            << ",\"create\":" << (create ? "true" : "false")
-            << "},"
-            << "\"timestamp\":" << ts
-            << "}"
-            << std::endl;
-      }
-    }
+    INFO("[split-thrash] onode_access op={} cid={} oid={} create={}",
+      static_cast<int>(op->op), cid.to_str(), oid.hobj.to_str(), create);
     // #endregion
     if (!create) {
       DEBUGT("op {}, get oid={} ...",
@@ -1690,27 +1693,8 @@ SeaStore::Shard::_do_transaction_step(
         // #region agent log
         {
           coll_t cid = i.get_cid(op->cid);
-          std::ofstream out(
-            "/home/aishwaryamathuria/ceph/.cursor/debug.log",
-            std::ios::app);
-          if (out) {
-            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
-            out << "{"
-                << "\"id\":\"onode_remove\","
-                << "\"runId\":\"pre-fix-2\","
-                << "\"hypothesisId\":\"B\","
-                << "\"location\":\"seastore.cc:1661\","
-                << "\"message\":\"onode remove\","
-                << "\"data\":{"
-                << "\"cid\":\"" << cid.to_str() << "\""
-                << ",\"oid\":\"" << oid.hobj.to_str() << "\""
-                << "},"
-                << "\"timestamp\":" << ts
-                << "}"
-                << std::endl;
-          }
+          INFO("[split-thrash] onode_remove cid={} oid={}",
+            cid.to_str(), oid.hobj.to_str());
         }
         // #endregion
         return _remove(ctx, onode
@@ -1728,28 +1712,8 @@ SeaStore::Shard::_do_transaction_step(
         // #region agent log
         {
           coll_t cid = i.get_cid(op->cid);
-          std::ofstream out(
-            "/home/aishwaryamathuria/ceph/.cursor/debug.log",
-            std::ios::app);
-          if (out) {
-            auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch())
-                .count();
-            out << "{"
-                << "\"id\":\"onode_create\","
-                << "\"runId\":\"pre-fix-2\","
-                << "\"hypothesisId\":\"B\","
-                << "\"location\":\"seastore.cc:1670\","
-                << "\"message\":\"onode create/touch\","
-                << "\"data\":{"
-                << "\"op\":" << static_cast<int>(op->op)
-                << ",\"cid\":\"" << cid.to_str() << "\""
-                << ",\"oid\":\"" << oid.hobj.to_str() << "\""
-                << "},"
-                << "\"timestamp\":" << ts
-                << "}"
-                << std::endl;
-          }
+          INFO("[split-thrash] onode_create op={} cid={} oid={}",
+            static_cast<int>(op->op), cid.to_str(), oid.hobj.to_str());
         }
         // #endregion
         return _touch(ctx, *onode);
@@ -1925,33 +1889,13 @@ SeaStore::Shard::_do_transaction_step(
     }
   }).handle_error_interruptible(
     tm_iertr::pass_further{},
-    crimson::ct_error::enoent::handle([op, &ctx, &i] {
+    crimson::ct_error::enoent::handle([op, &ctx, &i, FNAME] {
       // #region agent log
       {
-        std::ofstream out(
-          "/home/aishwaryamathuria/ceph/.cursor/debug.log",
-          std::ios::app);
-        if (out) {
-          auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(
-              std::chrono::system_clock::now().time_since_epoch())
-              .count();
-          const ghobject_t& oid = i.get_oid(op->oid);
-          coll_t cid = i.get_cid(op->cid);
-          out << "{"
-              << "\"id\":\"seastore_enoent_1\","
-              << "\"runId\":\"pre-fix-1\","
-              << "\"hypothesisId\":\"A\","
-              << "\"location\":\"seastore.cc:1847\","
-              << "\"message\":\"enoent in do_transaction_step\","
-              << "\"data\":{"
-              << "\"op\":" << static_cast<int>(op->op)
-              << ",\"cid\":\"" << cid.to_str() << "\""
-              << ",\"oid\":\"" << oid.hobj.to_str() << "\""
-              << "},"
-              << "\"timestamp\":" << ts
-              << "}"
-              << std::endl;
-        }
+        const ghobject_t& oid = i.get_oid(op->oid);
+        coll_t cid = i.get_cid(op->cid);
+        INFO("[split-thrash] enoent op={} cid={} oid={}",
+          static_cast<int>(op->op), cid.to_str(), oid.hobj.to_str());
       }
       // #endregion
       //OMAP_CLEAR, TRUNCATE, REMOVE etc ops will tolerate absent onode.
@@ -2390,6 +2334,11 @@ SeaStore::Shard::_split_collection(
   const coll_t &cid,
   int bits)
 {
+  LOG_PREFIX(SeaStoreS::_split_collection);
+  // #region agent log
+  INFO("[split-thrash] split_collection cid={} bits={}",
+    cid.to_str(), bits);
+  // #endregion
   return transaction_manager->read_collection_root(
     *ctx.transaction
   ).si_then([=, this, &ctx](auto _cmroot) {
@@ -2423,6 +2372,11 @@ SeaStore::Shard::_create_collection(
   internal_context_t &ctx,
   const coll_t& cid, int bits)
 {
+  LOG_PREFIX(SeaStoreS::_create_collection);
+  // #region agent log
+  INFO("[split-thrash] create_collection cid={} bits={}",
+    cid.to_str(), bits);
+  // #endregion
   return transaction_manager->read_collection_root(
     *ctx.transaction
   ).si_then([=, this, &ctx](auto _cmroot) {
