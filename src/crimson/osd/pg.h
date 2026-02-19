@@ -616,16 +616,17 @@ public:
 
   seastar::future<> split_colls(
     spg_t child,
-    int split_bits,
+    int child_split_bits,
+    int parent_split_bits,
     int seed,
     const pg_pool_t *pool,
     ObjectStore::Transaction &t) {
     coll_t target = coll_t(child);
-    create_pg_collection(t, child, split_bits);
+    create_pg_collection(t, child, child_split_bits);
     coll_t parent_coll = coll_ref->get_cid();
     t.split_collection(
       parent_coll,
-      split_bits,
+      parent_split_bits,
       seed,
       target);
     init_pg_ondisk(t, child, pool);

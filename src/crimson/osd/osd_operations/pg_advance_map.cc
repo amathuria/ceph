@@ -165,10 +165,11 @@ seastar::future<> PGAdvanceMap::split_pg(
   DEBUG("{}: epoch: {}", *this, pg_epoch);
 
   unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
-  pg->update_snap_mapper_bits(pg->get_pgid().get_split_bits(new_pg_num));
+  unsigned parent_split_bits = pg->get_pgid().get_split_bits(new_pg_num);
+  pg->update_snap_mapper_bits(parent_split_bits);
 
   co_await seastar::coroutine::parallel_for_each(split_children, [this, &next_map,
-  pg_epoch, FNAME] (auto child_pgid) -> seastar::future<> {
+  pg_epoch, parent_split_bits, FNAME] (auto child_pgid) -> seastar::future<> {
     children_pgids.insert(child_pgid);
 
     // Map each child pg ID to a core
@@ -181,17 +182,16 @@ seastar::future<> PGAdvanceMap::split_pg(
     DEBUG(" Parent pgid: {}", pg->get_pgid());
     DEBUG(" Child pgid: {}", child_pg->get_pgid());
     unsigned new_pg_num = next_map->get_pg_num(pg->get_pgid().pool());
-    // Depending on the new_pg_num the parent PG's collection is split.
-    // The child PG will be initiated with this split collection.
-    unsigned split_bits = child_pg->get_pgid().get_split_bits(new_pg_num);
-    DEBUG(" pg num is {}, m_seed is {}, split bits is {}",
-	new_pg_num, child_pg->get_pgid().ps(), split_bits);
+    unsigned child_split_bits = child_pg->get_pgid().get_split_bits(new_pg_num);
+    DEBUG(" pg num is {}, m_seed is {}, child split bits is {}, parent split bits is {}",
+	new_pg_num, child_pg->get_pgid().ps(), child_split_bits, parent_split_bits);
 
-    co_await pg->split_colls(child_pg->get_pgid(), split_bits, child_pg->get_pgid().ps(),
+    co_await pg->split_colls(child_pg->get_pgid(), child_split_bits,
+                             parent_split_bits, child_pg->get_pgid().ps(),
                              &child_pg->get_pgpool().info, rctx.transaction);
     DEBUG(" {} split collection done", child_pg->get_pgid());
     // Update the child PG's info from the parent PG
-    pg->split_into(child_pg->get_pgid().pgid, child_pg, split_bits);
+    pg->split_into(child_pg->get_pgid().pgid, child_pg, child_split_bits);
     // Make SnapMapper OID for the child PG
     auto child_coll_ref = child_pg->get_collection_ref();
     rctx.transaction.touch(child_coll_ref->get_cid(), child_pg->get_pgid().make_snapmapper_oid());
