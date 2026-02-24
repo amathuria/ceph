@@ -1689,6 +1689,7 @@ seastar::future<> PG::stop()
 
   co_await osdmap_gate.stop();
   co_await wait_for_active_blocker.stop();
+  client_request_orderer.clear_and_cancel(*this);
   co_await recovery_handler->stop();
   co_await recovery_backend->stop();
   co_await backend->stop();
