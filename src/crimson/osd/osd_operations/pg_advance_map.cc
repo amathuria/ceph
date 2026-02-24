@@ -300,7 +300,13 @@ seastar::future<bool> PGAdvanceMap::merge_pg(
 			       &parent)) {
     parent.is_split(new_pg_num, old_pg_num, &merge_sources);
     DEBUG("Source pg {} shutdown to avoid any operations", pg->get_pgid());
+    // #region agent log
+    WARN("[DEBUG_MERGE] about to stop source PG pgid={}", pg->get_pgid());
+    // #endregion
     co_await pg->stop();
+    // #region agent log
+    WARN("[DEBUG_MERGE] source PG stopped, requests NOT cleaned up pgid={}", pg->get_pgid());
+    // #endregion
     DEBUG("pg {} is a merge source, register it", pg->get_pgid());
     co_await shard_services.register_merge_source(parent, pg->get_pgid(),
 	                                          merge_sources.size());

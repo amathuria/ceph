@@ -1547,6 +1547,9 @@ bool PG::can_discard_replica_op(const Message& m, epoch_t m_map_epoch) const
 seastar::future<> PG::stop()
 {
   logger().info("PG {} {}", pgid, __func__);
+  // #region agent log
+  logger().warn("[DEBUG_MERGE] PG::stop() called pgid={} is_primary={}", pgid, is_primary());
+  // #endregion
   stopping = true;
 
   context_registry_on_change();
@@ -1570,6 +1573,9 @@ seastar::future<> PG::stop()
 
 void PG::on_change(ceph::os::Transaction &t) {
   logger().debug("{} {}:", *this, __func__);
+  // #region agent log
+  logger().warn("[DEBUG_MERGE] PG::on_change pgid={} is_primary={} stopping={}", get_pgid(), is_primary(), stopping);
+  // #endregion
   clear_log_entry_maps();
   context_registry_on_change();
   obc_loader.notify_on_change(is_primary());

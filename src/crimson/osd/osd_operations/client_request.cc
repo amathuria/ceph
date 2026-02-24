@@ -52,6 +52,10 @@ void ClientRequest::Orderer::clear_and_cancel(PG &pg)
 
 void ClientRequest::complete_request(PG &pg)
 {
+  LOG_PREFIX(ClientRequest::complete_request);
+  // #region agent log
+  WARNDPP("[DEBUG_MERGE] complete_request called pgid={}", pg, pg.get_pgid());
+  // #endregion
   track_event<CompletionEvent>();
   pg.client_request_orderer.remove_request(*this);
   on_complete.set_value();
@@ -260,6 +264,10 @@ seastar::future<> ClientRequest::with_pg_process(
     }, [FNAME, this, this_instance_id, pgref](std::exception_ptr eptr) {
       DEBUGDPP("{}.{}: interrupted due to {}",
 	       *pgref, *this, this_instance_id, eptr);
+      // #region agent log
+      WARNDPP("[DEBUG_MERGE] interrupted pgid={} instance={} ordering_hook_linked={} exception={}",
+	      *pgref, pgref->get_pgid(), this_instance_id, ordering_hook.is_linked(), eptr);
+      // #endregion
     }, pgref, pgref->get_osdmap_epoch()).finally(
       [this, FNAME, opref=std::move(opref), pgref,
        this_instance_id, instance_handle=std::move(instance_handle), &ihref]() mutable {
