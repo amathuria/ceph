@@ -1,0 +1,110 @@
+tasks:
+  # For legacy (non-cephadm) suites, install the crimson OSD package and switch
+  # the ceph-osd alternative before the suite's main 'ceph' task starts daemons.
+  - install:
+      extra_packages:
+        # Debian/Ubuntu publish crimson as `ceph-osd` (with classic split out as
+        # `ceph-osd-classic`), so `ceph-osd-crimson` may not exist there.
+        deb: []
+        rpm:
+          - ceph-osd-crimson
+          - ceph-osd-crimson-debuginfo
+  - pexec:
+      all:
+        - |
+          set -euo pipefail
+          if [ -x /usr/bin/ceph-osd-crimson ]; then
+            sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd-crimson
+          elif [ -x /usr/bin/ceph-osd ]; then
+            # Debian/Ubuntu: select crimson implementation (classic is provided
+            # separately as /usr/bin/ceph-osd-classic).
+            sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd
+          else
+            echo "No ceph-osd binary found to select" >&2
+            exit 1
+          fi
+        - |
+          set -euo pipefail
+          echo "== ceph-osd alternative selection =="
+          sudo update-alternatives --display ceph-osd || true
+          echo "== ceph-osd path resolution =="
+          readlink -f /usr/bin/ceph-osd || true
+          ls -l /usr/bin/ceph-osd /usr/bin/ceph-osd-classic 2>/dev/null || true
+        - |
+          set -euo pipefail
+          echo "== ceph-osd exec path (what tasks will run) =="
+          which ceph-osd || true
+          real="$(readlink -f "$(command -v ceph-osd)" 2>/dev/null || true)"
+          echo "ceph-osd resolves to: ${real}"
+          if [ -n "${real}" ] && [ -e "${real}" ]; then
+            echo "== rpm owner of ceph-osd binary =="
+            rpm -qf "${real}" || true
+            echo "== binary build-id and sha256 =="
+            readelf -n "${real}" 2>/dev/null | sed -n '1,80p' || true
+            sha256sum "${real}" || true
+          fi
+
+overrides:
+  ceph:
+    crimson_compat: true
+    conf:
+      global:
+        enable experimental unrecoverable data corrupting features: crimson
+      mon:
+        osd pool default crimson: true
+      osd:
+        # Crimson + SeaStore + EC can be CPU-hungry; 1 shard is easy to stall.
+        # Suites can still override for perf or tiny clusters.
+        crimson cpu num: 4
+
+  # cephadm-based suites deploy OSDs via the cephadm task. "osd_type: crimson"
+  # switches the orchestrated OSD implementation.
+  cephadm:
+    osd_type: crimson
+teuthology:
+  postmerge:
+    - |
+      local y = py_attrgetter(yaml)
+      local os_type = y.get('os_type')
+      if os_type == 'ubuntu' then
+        log.debug('skipping crimson OSD on ubuntu: builds not ready')
+        reject()
+      end
+      local tasks = y.get('tasks')
+      if tasks == nil then
+        accept()
+      end
+
+      -- NOTE: This Lua environment is sandboxed and does not expose `pcall`, and
+      -- some lupa bridges will throw when probing python proxy attributes on
+      -- non-dict objects. So we avoid `.get()` entirely and match on stringified
+      -- task content instead.
+      local function is_crimson_install(t)
+        local s = tostring(t)
+        return s:find('ceph%-osd%-crimson', 1, false) ~= nil
+      end
+
+      local function is_crimson_switch(t)
+        local s = tostring(t)
+        return s:find('update%-alternatives %-%-set ceph%-osd', 1, false) ~= nil
+      end
+
+      local to_move = py_list()
+      local rest = py_list()
+      for _, t in py_enumerate(tasks) do
+        if is_crimson_install(t) or is_crimson_switch(t) then
+          py_attrgetter(to_move).append(t)
+        else
+          py_attrgetter(rest).append(t)
+        end
+      end
+
+      if py_len(to_move) > 0 then
+        local new_tasks = py_list()
+        local nt = py_attrgetter(new_tasks)
+        for _, m in py_enumerate(to_move) do nt.append(m) end
+        for _, r in py_enumerate(rest) do nt.append(r) end
+        local upd = py_dict()
+        upd['tasks'] = new_tasks
+        y.update(upd)
+      end
