@@ -1,3 +1,23 @@
+tasks:
+  - install:
+      extra_packages:
+        deb: []
+        rpm:
+          - ceph-osd-crimson
+          - ceph-osd-crimson-debuginfo
+  - pexec:
+      all:
+        - |
+          set -euo pipefail
+          if [ -x /usr/bin/ceph-osd-crimson ]; then
+            sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd-crimson
+          elif [ -x /usr/bin/ceph-osd ]; then
+            sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd
+          else
+            echo "No ceph-osd binary found to select" >&2
+            exit 1
+          fi
+
 overrides:
   ceph:
     crimson_compat: true
@@ -26,44 +46,3 @@ overrides:
 
   cephadm:
     osd_type: crimson
-
-teuthology:
-  postmerge:
-    # Prepend tasks so the OSD binary is selected before `ceph-osd --mkfs`.
-    - |
-      local prefix = yaml_load([[
-      - install:
-          extra_packages:
-            deb: []
-            rpm:
-              - ceph-osd-crimson
-              - ceph-osd-crimson-debuginfo
-      - pexec:
-          all:
-            - |
-              set -euo pipefail
-              if [ -x /usr/bin/ceph-osd-crimson ]; then
-                sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd-crimson
-              elif [ -x /usr/bin/ceph-osd ]; then
-                sudo update-alternatives --set ceph-osd /usr/bin/ceph-osd
-              else
-                echo "No ceph-osd binary found to select" >&2
-                exit 1
-              fi
-      ]])
-      local y = py_attrgetter(yaml)
-      if y.get('tasks') == nil then
-        local init = py_dict()
-        init['tasks'] = py_list()
-        y.update(init)
-      end
-      local new_tasks = py_list()
-      for i, t in py_enumerate(prefix) do
-        new_tasks:append(t)
-      end
-      for i, t in py_enumerate(y.get('tasks')) do
-        new_tasks:append(t)
-      end
-      local upd = py_dict()
-      upd['tasks'] = new_tasks
-      y.update(upd)
