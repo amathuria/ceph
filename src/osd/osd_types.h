@@ -1323,6 +1323,9 @@ struct pg_pool_t {
     // Pool features are restricted to those supported by crimson-osd.
     // Note, does not prohibit being created on classic osd.
     FLAG_CRIMSON = 1<<18,
+    // Allow decreasing pg_num/pgp_num (PG merge) for crimson pools.
+    // Experimental; requires that the pool is currently all bluestore.
+    FLAG_CRIMSON_ALLOW_PG_MERGE = 1<<21,
     FLAG_EC_OPTIMIZATIONS = 1<<19, // enable optimizations, once enabled, cannot be disabled
     FLAG_CLIENT_SPLIT_READS = 1<<20, // Optimized EC is permitted to do direct reads.
   };
@@ -1349,6 +1352,7 @@ struct pg_pool_t {
     case FLAG_BULK: return "bulk";
     case FLAG_CRIMSON: return "crimson";
     case FLAG_EC_OPTIMIZATIONS: return "ec_optimizations";
+    case FLAG_CRIMSON_ALLOW_PG_MERGE: return "crimson_allow_pg_merge";
     default: return "???";
     }
   }
@@ -1405,6 +1409,8 @@ struct pg_pool_t {
       return FLAG_BULK;
     if (name == "crimson")
       return FLAG_CRIMSON;
+    if (name == "crimson_allow_pg_merge")
+      return FLAG_CRIMSON_ALLOW_PG_MERGE;
     if (name == "ec_optimizations")
       return FLAG_EC_OPTIMIZATIONS;
     return 0;

@@ -525,12 +525,12 @@ public:
 
   FORWARD_TO_OSD_SINGLETON(send_to_osd)
 
-<<<<<<< HEAD
   crimson::os::BackendStore get_store(store_index_t store_index) {
     auto store = local_state.b_store;
     store.store_index = store_index;
     return store;
-=======
+  }
+
   struct merge_info_t {
     // target_pg -> set of source pgids that are ready for merge
     std::map<spg_t, std::set<spg_t>> sources_ready;
@@ -542,13 +542,12 @@ public:
     // ensures that when the PG is eventually released, its destruction
     // is safely routed back to its birth_shard.
     std::map<spg_t, std::map<spg_t,
-    std::pair<core_id_t, crimson::local_shared_foreign_ptr<Ref<PG>>>>> ready_pgs;
+      std::pair<core_id_t, crimson::local_shared_foreign_ptr<Ref<PG>>>>> ready_pgs;
   };
   merge_info_t local_merge_info;
 
   crimson::os::FuturizedStore::Shard &get_store() {
     return local_state.store;
->>>>>>> ea642dc39b0 (crimson/osd/shard_services: implement PG merge synchronization infrastructure)
   }
 
   struct shard_stats_t {

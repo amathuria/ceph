@@ -4033,7 +4033,36 @@ bool OSDMonitor::prepare_pg_ready_to_merge(MonOpRequestRef op)
     return false; /* nothing to propose, yet */
   }
 
-  if (m->ready) {
+  bool allow_merge = true;
+  if (m->ready && p.has_flag(pg_pool_t::FLAG_CRIMSON)) {
+    if (!p.has_flag(pg_pool_t::FLAG_CRIMSON_ALLOW_PG_MERGE)) {
+      allow_merge = false;
+      mon.clog->warn() << "blocking crimson pg merge for " << m->pgid
+                       << " (pool '" << osdmap.get_pool_name(m->pgid.pool())
+                       << "') because pool flag 'crimson_allow_pg_merge' is not set";
+      dout(1) << __func__ << " blocking crimson pg merge for " << m->pgid
+              << " because pool flag crimson_allow_pg_merge is not set" << dendl;
+    }
+
+    // PG merging is only supported for Crimson pools on Bluestore.
+    // Use a sampled pool-level check for efficiency. Note this is best-effort
+    // (checks a few PGs) and allows missing metadata.
+    if (allow_merge) {
+      std::stringstream why;
+      if (!is_pool_currently_all_bluestore(m->pgid.pool(), p, &why)) {
+        allow_merge = false;
+        mon.clog->warn() << "blocking crimson pg merge for " << m->pgid
+                         << " (pool '" << osdmap.get_pool_name(m->pgid.pool())
+                         << "') because pool is not currently all bluestore: "
+                         << why.str();
+        dout(1) << __func__ << " blocking crimson pg merge for " << m->pgid
+                << " because pool is not currently all bluestore: "
+                << why.str() << dendl;
+      }
+    }
+  }
+
+  if (m->ready && allow_merge) {
     p.dec_pg_num(m->pgid,
 		 pending_inc.epoch,
 		 m->source_version,
@@ -8639,12 +8668,19 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       return -EPERM;
     }
     // check for Crimson pools
-    // pg merging is not yet supported in Crimson by default
+    // pg merging is only supported when explicitly enabled per-pool
+    // (crimson_allow_pg_merge) and when the pool is currently all bluestore.
     if (p.has_flag(pg_pool_t::FLAG_CRIMSON)) {
       if (n < (int)p.get_pg_num()) {
-        if (!g_conf().get_val<bool>("crimson_allow_pg_merge")) {
+        if (!p.has_flag(pg_pool_t::FLAG_CRIMSON_ALLOW_PG_MERGE)) {
           ss << "crimson-osd does not support decreasing pg_num_actual (shrinking) "
-             << "unless crimson_allow_pg_merge is true";
+             << "unless the pool flag crimson_allow_pg_merge is set";
+          return -ENOTSUP;
+        }
+        std::stringstream why;
+        if (!is_pool_currently_all_bluestore(pool, p, &why)) {
+          ss << "crimson-osd pg merging requires pool to be currently all bluestore: "
+             << why.str();
           return -ENOTSUP;
         }
       }
@@ -8705,12 +8741,19 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       return -EPERM;
     }
     // check for Crimson pools
-    // pg merging is not yet supported in Crimson by default
+    // pg merging is only supported when explicitly enabled per-pool
+    // (crimson_allow_pg_merge) and when the pool is currently all bluestore.
     if (p.has_flag(pg_pool_t::FLAG_CRIMSON)) {
       if (n < (int)p.get_pg_num_target()) {
-        if (!g_conf().get_val<bool>("crimson_allow_pg_merge")) {
+        if (!p.has_flag(pg_pool_t::FLAG_CRIMSON_ALLOW_PG_MERGE)) {
           ss << "crimson-osd does not support decreasing pg_num "
-             << "unless crimson_allow_pg_merge is true";
+             << "unless the pool flag crimson_allow_pg_merge is set";
+          return -ENOTSUP;
+        }
+        std::stringstream why;
+        if (!is_pool_currently_all_bluestore(pool, p, &why)) {
+          ss << "crimson-osd pg merging requires pool to be currently all bluestore: "
+             << why.str();
           return -ENOTSUP;
         }
       }
@@ -8789,12 +8832,19 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       return -EPERM;
     }
     // check for Crimson pools
-    // pg merging is not yet supported in Crimson by default
+    // pg merging is only supported when explicitly enabled per-pool
+    // (crimson_allow_pg_merge) and when the pool is currently all bluestore.
     if (p.has_flag(pg_pool_t::FLAG_CRIMSON)) {
       if (n < (int)p.get_pgp_num()) {
-        if (!g_conf().get_val<bool>("crimson_allow_pg_merge")) {
+        if (!p.has_flag(pg_pool_t::FLAG_CRIMSON_ALLOW_PG_MERGE)) {
           ss << "crimson-osd does not support decreasing pgp_num_actual "
-             << "unless crimson_allow_pg_merge is true";
+             << "unless the pool flag crimson_allow_pg_merge is set";
+          return -ENOTSUP;
+        }
+        std::stringstream why;
+        if (!is_pool_currently_all_bluestore(pool, p, &why)) {
+          ss << "crimson-osd pg merging requires pool to be currently all bluestore: "
+             << why.str();
           return -ENOTSUP;
         }
       }
@@ -8827,12 +8877,19 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
       return -EPERM;
     }
     // check for Crimson pools
-    // pg merging is not yet supported in Crimson
+    // pg merging is only supported when explicitly enabled per-pool
+    // (crimson_allow_pg_merge) and when the pool is currently all bluestore.
     if (p.has_flag(pg_pool_t::FLAG_CRIMSON)) {
       if (n < (int)p.get_pgp_num_target()) {
-        if (!g_conf().get_val<bool>("crimson_allow_pg_merge")) {
+        if (!p.has_flag(pg_pool_t::FLAG_CRIMSON_ALLOW_PG_MERGE)) {
           ss << "crimson-osd does not support decreasing pgp_num "
-             << "unless crimson_allow_pg_merge is true";
+             << "unless the pool flag crimson_allow_pg_merge is set";
+          return -ENOTSUP;
+        }
+        std::stringstream why;
+        if (!is_pool_currently_all_bluestore(pool, p, &why)) {
+          ss << "crimson-osd pg merging requires pool to be currently all bluestore: "
+             << why.str();
           return -ENOTSUP;
         }
       }
@@ -8887,7 +8944,8 @@ int OSDMonitor::prepare_command_pool_set(const cmdmap_t& cmdmap,
     p.crush_rule = id;
   } else if (var == "nodelete" || var == "nopgchange" ||
 	     var == "nosizechange" || var == "write_fadvise_dontneed" ||
-	     var == "noscrub" || var == "nodeep-scrub" || var == "bulk") {
+	     var == "noscrub" || var == "nodeep-scrub" || var == "bulk" ||
+	     var == "crimson_allow_pg_merge") {
     uint64_t flag = pg_pool_t::get_flag_by_name(var);
     // make sure we only compare against 'n' if we didn't receive a string
     if (val == "true" || (interr.empty() && n == 1)) {
