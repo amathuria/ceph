@@ -50,6 +50,16 @@ overrides:
     conf:
       global:
         enable experimental unrecoverable data corrupting features: crimson
+        # Crimson's dispatcher chain (mgrc/monc/heartbeat) is not yet
+        # safe against connection shard migration triggered by
+        # repeated reconnects, so disable msgr fault injection for
+        # crimson runs.  Remove once the dispatcher home-shard hop
+        # is in place.  This overrides any msgr-failures/* axis that
+        # sets these knobs in `global`; teuthology fragment merge
+        # order applies osd_flavour after msgr-failures.
+        ms inject socket failures: 0
+        ms inject delay probability: 0
+        ms inject internal delays: 0
       mon:
         osd pool default crimson: true
       osd:
