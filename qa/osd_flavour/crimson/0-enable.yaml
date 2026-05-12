@@ -71,6 +71,20 @@ overrides:
   # switches the orchestrated OSD implementation.
   cephadm:
     osd_type: crimson
+
+  # Same as qa/suites/crimson-rados/rgw/sts/pool-type.yaml: do not use an EC RGW
+  # data pool. Crimson + EC is still easy to hit bugs in; suites can override.
+  rgw:
+    ec-data-pool: false
+
+  # Crimson OSD currently crashes on some EC code paths exercised by
+  # ceph_test_cls_refcount (and possibly other gtest workunits). The
+  # cooperating workunits (e.g. qa/workunits/cls/test_cls_refcount.sh) check
+  # this variable and pass --gtest_filter=-*_ec so the EC subtests are
+  # skipped under crimson. Remove this once crimson supports those paths.
+  workunit:
+    env:
+      CRIMSON_SKIP_EC_TESTS: "1"
 teuthology:
   postmerge:
     - |
