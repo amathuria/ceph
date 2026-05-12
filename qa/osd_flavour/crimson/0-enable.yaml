@@ -77,11 +77,10 @@ overrides:
   rgw:
     ec-data-pool: false
 
-  # Crimson OSD currently crashes on some EC code paths exercised by
-  # ceph_test_cls_refcount (and possibly other gtest workunits). The
-  # cooperating workunits (e.g. qa/workunits/cls/test_cls_refcount.sh) check
-  # this variable and pass --gtest_filter=-*_ec so the EC subtests are
-  # skipped under crimson. Remove this once crimson supports those paths.
+  # Crimson OSD: skip known-bad cls_refcount cases (see qa/workunits/cls/
+  # test_cls_refcount.sh). When CRIMSON_SKIP_EC_TESTS is set, that script uses
+  # --gtest_filter to drop *_ec tests and cls_refcount.test_put_snap. Remove
+  # once crimson matches classic behavior on those paths.
   workunit:
     env:
       CRIMSON_SKIP_EC_TESTS: "1"
