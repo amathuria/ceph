@@ -1653,6 +1653,22 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
       co_await transaction_manager->submit_transaction(*ctx.transaction);
     })
   ).handle_error(
+    // all_same_way is a catch-all: any error that was not consumed by
+    // with_repeat_trans_intr (which only retries on eagain/conflict) lands
+    // here and causes an OSD abort.
+    //
+    // KNOWN BUG: crimson::ct_error::value_too_large reaches this handler when
+    // OMapLeafNode::insert() rejects a KV pair via its overly-conservative
+    // exceeds_max_kv_limit() check (capacity()/4 instead of capacity()).
+    // This is NOT a logic error in the storage engine — it is a legitimate
+    // "entry too large" condition that should be returned to the caller
+    // (ultimately as -EOVERFLOW to the OSD client) rather than crashing.
+    //
+    // Fix needed here: add a specific handler for value_too_large that throws
+    // std::system_error(EOVERFLOW) (a Seastar exception) so it propagates back
+    // to the PG / OSD op pipeline rather than aborting.  Then also fix
+    // exceeds_max_kv_limit() in omap_btree_node_impl.h so the threshold
+    // matches what can actually be stored.
     crimson::ct_error::all_same_way([FNAME, &ctx](auto e) {
       transaction_dump(ctx.ext_transaction);
       ceph_abort_msg(fmt::format("{} unexpected error: {}", FNAME, e));

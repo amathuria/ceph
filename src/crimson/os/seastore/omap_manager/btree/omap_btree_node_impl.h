@@ -441,6 +441,31 @@ struct OMapLeafNode
     const std::string &key,
     const ceph::bufferlist &value) final;
 
+  // BUG: capacity()/4 (~16 KB for a 64 KB leaf) is 4x too conservative.
+  //
+  // This check is meant to catch KV pairs that are so large they can never be
+  // stored even after a node split.  The correct upper bound is whether the
+  // entry fits in a completely EMPTY leaf, i.e.:
+  //
+  //   (sizeof(omap_leaf_key_le_t) + key.length() + value.length()) > capacity()
+  //
+  // Using capacity()/4 incorrectly rejects values between 16 KB and 64 KB.
+  // For example, a _user.rgw.bucket-notification attribute of 49 KB fails
+  // this check even though the 64 KB leaf has ~65 000 bytes of free_space()
+  // available (size=2 with two small existing entries) and the value would
+  // fit directly without any split.
+  //
+  // When this returns true, OMapLeafNode::insert() propagates
+  // crimson::ct_error::value_too_large up the call stack, which reaches
+  // do_transaction_no_callbacks()'s catch-all handle_error() and causes
+  // ceph_abort_msg() — crashing the OSD.
+  //
+  // Fix: change the divisor from 4 to 1 (entries up to capacity()-overhead
+  // can always be stored in an empty leaf).  If we also want to guarantee a
+  // correct split path for very large entries, cap at capacity()/2, but that
+  // still only allows ~32 KB and would not have saved this 49 KB value.
+  // See also: is_overflow() in string_kv_node_layout.h which is the correct
+  // per-insert space check.
   bool exceeds_max_kv_limit(
     const std::string &key,
     const ceph::bufferlist &value) const final {

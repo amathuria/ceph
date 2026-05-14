@@ -753,9 +753,27 @@ OMapLeafNode::insert(
 {
   LOG_PREFIX(OMapLeafNode::insert);
   DEBUGT("{} -> {}, this: {}", oc.t, key, value, *this);
+  // CRASH PATH: exceeds_max_kv_limit() uses capacity()/4 (~16 KB) as the
+  // hard upper bound.  Any KV pair larger than that returns value_too_large
+  // here, even if the leaf has tens of KB of free_space() available.
+  //
+  // The error propagates: OMapLeafNode::insert
+  //   -> BtreeOMapManager::omap_set_key   (no handler — si_then skips errors)
+  //   -> SeaStore::_setattrs              (returns tm_ret which includes v_t_l)
+  //   -> SeaStore::_do_transaction_step   (same)
+  //   -> do_transaction_no_callbacks      (handle_error all_same_way -> abort)
+  //
+  // Result: ceph_abort_msg("unexpected error: generic:75")  => OSD crash.
+  // generic:75 == EOVERFLOW == std::errc::value_too_large.
   if (exceeds_max_kv_limit(key, value)) {
     return crimson::ct_error::value_too_large::make();
   }
+  // extent_will_overflow() is the correct per-insert space check:
+  //   free_space() < sizeof(omap_leaf_key_le_t) + ksize + vsize
+  // If this fires the node is split; if NOT, the value is inserted directly.
+  // For the 49 KB notification attr on a nearly-empty leaf (free_space ~65 KB),
+  // this would return false — direct insert would succeed — IF the
+  // exceeds_max_kv_limit() gate above had not already blocked it.
   bool overflow = extent_will_overflow(key.size(), value.length());
   if (!overflow) {
     if (!is_mutable()) {

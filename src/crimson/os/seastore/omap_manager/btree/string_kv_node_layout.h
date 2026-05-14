@@ -1315,6 +1315,14 @@ public:
     return len;
   }
 
+  // Correct per-insert space check: returns true when the current free space
+  // is not enough to hold the new entry.  If true, the caller triggers a node
+  // split.  This is based on the actual current free_space(), not a fixed
+  // fraction of capacity(), so it correctly allows large values into nodes
+  // that happen to have enough room.
+  //
+  // Contrast with OMapLeafNode::exceeds_max_kv_limit() which uses
+  // capacity()/4 and is the source of the value_too_large OSD crash.
   bool is_overflow(size_t ksize, size_t vsize) const {
     return free_space() < (sizeof(omap_leaf_key_le_t) + ksize + vsize);
   }

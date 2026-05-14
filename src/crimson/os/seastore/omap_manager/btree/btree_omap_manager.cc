@@ -179,6 +179,11 @@ BtreeOMapManager::omap_set_key(
     get_omap_context(t, omap_root),
     omap_root
   ).si_then([this, &t, &key, &value, &omap_root](auto root) {
+    // root->insert() may return value_too_large if exceeds_max_kv_limit()
+    // fires inside OMapLeafNode::insert().  si_then() only runs its lambda
+    // on success — errors bypass it and propagate upward unchanged.
+    // There is no handle_error_interruptible here, so value_too_large exits
+    // this function as an unhandled error in the returned future.
     return root->insert(get_omap_context(
       t, omap_root), key, value);
   }).si_then([this, &omap_root, &t](auto mresult) -> omap_set_key_ret {
