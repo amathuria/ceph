@@ -84,6 +84,24 @@ overrides:
   workunit:
     env:
       CRIMSON_SKIP_EC_TESTS: "1"
+
+  # thrashosds: match qa/suites/crimson-rados/thrash/thrashers/default.yaml.
+  # Crimson has no OpTracker (no osd_enable_op_tracker); disable optrack toggle
+  # and other classic-only / overly aggressive thrash actions.
+  thrashosds:
+    ceph_objectstore_tool: false
+    dump_ops_enable: false
+    optrack_toggle_delay: 0
+    sighup_delay: 0
+    noscrub_toggle_delay: 0
+    chance_thrash_pg_upmap: 0
+    reweight_osd: 0
+    thrash_primary_affinity: false
+    chance_inject_pause_short: 0
+    chance_thrash_cluster_full: 0
+    chance_reset_purged_snaps_last: 0
+    chance_trim_stale_osdmaps: 0
+
 teuthology:
   postmerge:
     - |
@@ -123,10 +141,27 @@ teuthology:
       end
 
       if py_len(to_move) > 0 then
+        -- Keep the suite's first (base) install task first.  Teuthology's
+        -- get_install_task_flavor() only inspects that task; if the crimson
+        -- install (extra_packages as a deb/rpm dict) is moved ahead of it,
+        -- deep_merge with workload overrides that use extra_packages as a
+        -- flat list raises AssertionError during scheduling.
         local new_tasks = py_list()
         local nt = py_attrgetter(new_tasks)
-        for _, m in py_enumerate(to_move) do nt.append(m) end
-        for _, r in py_enumerate(rest) do nt.append(r) end
+        local inserted = false
+        for _, r in py_enumerate(rest) do
+          nt.append(r)
+          if not inserted then
+            local s = tostring(r)
+            if s:find("'install'", 1, false) ~= nil then
+              for _, m in py_enumerate(to_move) do nt.append(m) end
+              inserted = true
+            end
+          end
+        end
+        if not inserted then
+          for _, m in py_enumerate(to_move) do nt.append(m) end
+        end
         local upd = py_dict()
         upd['tasks'] = new_tasks
         y.update(upd)
