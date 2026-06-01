@@ -2083,15 +2083,16 @@ PgScrubber::emit_scrub_result()
                  << m_is_deep << dendl;
         utime_t now = ceph_clock_now();
         history.last_scrub = m_pg->recovery_state.get_info().last_update;
-        history.last_scrub_stamp = now;
+        m_pg->set_last_scrub_stamp(now, history, stats);
         if (m_is_deep) {
           history.last_deep_scrub = m_pg->recovery_state.get_info().last_update;
-          history.last_deep_scrub_stamp = now;
+          m_pg->set_last_deep_scrub_stamp(now, history, stats);
         }
 
         if (m_is_deep) {
           if ((m_shallow_errors == 0) && (m_deep_errors == 0)) {
             history.last_clean_scrub_stamp = now;
+            stats.last_clean_scrub_stamp = now;
           }
           stats.stats.sum.num_shallow_scrub_errors = m_shallow_errors;
           stats.stats.sum.num_deep_scrub_errors = m_deep_errors;
@@ -2109,6 +2110,7 @@ PgScrubber::emit_scrub_result()
           // because of deep-scrub errors
           if (m_shallow_errors == 0) {
             history.last_clean_scrub_stamp = now;
+            stats.last_clean_scrub_stamp = now;
           }
         }
 

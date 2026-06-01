@@ -7921,10 +7921,19 @@ MPGStats* OSD::collect_pg_stats()
   // their stats are always enqueued for sending.
   std::shared_lock l{map_lock};
 
+  auto m = new MPGStats(monc->get_fsid(), get_osdmap_epoch());
+  if (!get_osdmap()->is_up(whoami)) {
+    // Do not report PG stats while down/out.  A partitioned OSD may
+    // still run (e.g. ms_blackhole testing) and would publish stale
+    // stats that block updates from the current acting primary.
+    m->osd_stat = service.get_osd_stat();
+    m->osd_stat.os_perf_stat = store->get_cur_stats();
+    return m;
+  }
+
   osd_stat_t cur_stat = service.get_osd_stat();
   cur_stat.os_perf_stat = store->get_cur_stats();
 
-  auto m = new MPGStats(monc->get_fsid(), get_osdmap_epoch());
   m->osd_stat = cur_stat;
 
   std::lock_guard lec{min_last_epoch_clean_lock};

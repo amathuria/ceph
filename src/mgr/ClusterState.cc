@@ -118,6 +118,20 @@ void ClusterState::ingest_pgstats(ref_t<MPGStats> stats)
                << dendl;
       continue;
     }
+    // Only the osdmap acting primary may publish per-PG stats.  A partitioned
+    // or blackholed OSD may still run and report stale stats (with a high
+    // reported_seq) after failover, which would otherwise mask scrub progress
+    // from the new primary.
+    const int acting_primary = with_osdmap([&pgid](const OSDMap& osdmap) {
+      return osdmap.get_pg_acting_primary(pgid);
+    });
+    if (acting_primary < 0 || from != acting_primary) {
+      dout(15) << " got " << pgid
+	       << " stats from osd." << from
+	       << " but osdmap acting primary is osd." << acting_primary
+	       << dendl;
+      continue;
+    }
     // In case we already heard about more recent stats from this PG
     // from another OSD
     const auto q = pg_map.pg_stat.find(pgid);

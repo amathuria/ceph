@@ -22,6 +22,9 @@ overrides:
 tasks:
 - install:
 - ceph:
+    # ceph_test_osd_stale_read fences an OSD; wait-for-scrub would fail while
+    # that OSD still publishes stale pg stats until the mgr/osd fixes land.
+    wait-for-scrub: false
     pre-mgr-commands:
       - sudo ceph config set mgr mgr_pool false --force
 - exec:

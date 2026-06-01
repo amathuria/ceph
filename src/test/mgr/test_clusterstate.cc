@@ -158,6 +158,27 @@ TEST_F(ClusterStateTest, IngestPGStats_oldReportedSeq)
   ASSERT_FALSE(p_inc.pg_stat_updates.contains(pgid_old_version));
 }
 
+TEST_F(ClusterStateTest, IngestPGStats_nonActingPrimary)
+{
+  pg_t pgid(0, 1);
+
+  stats->set_src(entity_name_t::OSD(0));
+  stats->pg_stat[pgid] = pgstat;
+  cs->ingest_pgstats(stats);
+  cs->update_delta_stats();
+
+  // A non-primary OSD must not overwrite PG stats, even with a newer seq.
+  pg_stat_t stale = pgstat;
+  stale.reported_epoch = 99;
+  stale.reported_seq = 99;
+  stats->set_src(entity_name_t::OSD(1));
+  stats->pg_stat.clear();
+  stats->pg_stat[pgid] = stale;
+  ingest_and_pginc();
+
+  ASSERT_FALSE(p_inc.pg_stat_updates.contains(pgid));
+}
+
 TEST_F(ClusterStateTest, UpdateDeltaStats)
 {
   pg_t pgid(0, 1);
