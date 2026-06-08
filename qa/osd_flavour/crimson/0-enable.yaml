@@ -1,16 +1,34 @@
+# Crimson OSD enablement fragment (used when a suite picks osd_flavour/crimson).
+#
+# Teuthology merges this YAML with other suite fragments into one job config.
+# This file has three top-level sections:
+#
+#   tasks:     shell commands / teuthology tasks to run on the cluster
+#   overrides: settings merged into the final job (ceph.conf, task knobs, etc.)
+#   teuthology: Lua scripts that run after merge (filter jobs, fix task order)
+#
+# Typical job task order after postmerge:
+#   install  ->  pexec (this file)  ->  ceph  ->  workloads...
+#
+# Classic-only jobs use osd_flavour/classic/ and never load this file.
+
+# ---------------------------------------------------------------------------
+# tasks: things teuthology runs on the test machines (in list order, unless
+# postmerge below reorders them).
+# ---------------------------------------------------------------------------
 tasks:
-  # For legacy (non-cephadm) suites, install the crimson OSD package and switch
-  # the ceph-osd alternative before the suite's main 'ceph' task starts daemons.
-  - install:
-      extra_packages:
-        # Debian/Ubuntu publish crimson as `ceph-osd` (with classic split out as
-        # `ceph-osd-classic`), so `ceph-osd-crimson` may not exist there.
-        deb: []
-        rpm:
-          - ceph-osd-crimson
-          - ceph-osd-crimson-debuginfo
+  # pexec: run shell commands on all cluster nodes ("all:").
+  #
+  # We do NOT add a second "install:" task here. Crimson RPMs are requested via
+  # overrides.install.ceph.extra_packages in postmerge (see bottom of file).
+  # That avoids teuthology deep_merge errors when workloads also set extras
+  # (e.g. extra_packages: [rbd-nbd] on encryption/device jobs).
+  #
+  # This pexec block only switches /usr/bin/ceph-osd to the crimson binary.
+  # It must run after "install" and before "ceph" (postmerge enforces that).
   - pexec:
       all:
+        # Block 1: point the ceph-osd alternative at crimson (RPM vs Debian paths).
         - |
           set -euo pipefail
           if [ -x /usr/bin/ceph-osd-crimson ]; then
@@ -23,6 +41,7 @@ tasks:
             echo "No ceph-osd binary found to select" >&2
             exit 1
           fi
+        # Blocks 2-3: debug logging to teuthology.log (helps confirm the right binary).
         - |
           set -euo pipefail
           echo "== ceph-osd alternative selection =="
@@ -44,10 +63,17 @@ tasks:
             sha256sum "${real}" || true
           fi
 
+# ---------------------------------------------------------------------------
+# overrides: merged into the job config under the top-level "overrides:" key.
+# Nested keys target specific teuthology tasks or ceph config sections.
+# ---------------------------------------------------------------------------
 overrides:
+  # "ceph" overrides feed into the teuthology "ceph" task (cluster bring-up).
   ceph:
+    # Tell teuthology helpers this is a crimson cluster (not classic ceph-osd).
     crimson_compat: true
     conf:
+      # conf.global / mon / osd map to ceph.conf sections [global], [mon], [osd].
       global:
         enable experimental unrecoverable data corrupting features: crimson
         # Crimson's dispatcher chain (mgrc/monc/heartbeat) is not yet
@@ -61,33 +87,34 @@ overrides:
         ms inject delay probability: 0
         ms inject internal delays: 0
       mon:
+        # New pools default to crimson OSDs (see also cephadm osd_type below).
         osd pool default crimson: true
       osd:
         # Crimson + SeaStore + EC can be CPU-hungry; 1 shard is easy to stall.
         # Suites can still override for perf or tiny clusters.
         crimson cpu num: 4
 
-  # cephadm-based suites deploy OSDs via the cephadm task. "osd_type: crimson"
-  # switches the orchestrated OSD implementation.
+  # Only used when the suite runs the teuthology "cephadm" task (not legacy ceph).
   cephadm:
     osd_type: crimson
 
+  # Only used when the suite runs RGW workloads.
   # Same as qa/suites/crimson-rados/rgw/sts/pool-type.yaml: do not use an EC RGW
   # data pool. Crimson + EC is still easy to hit bugs in; suites can override.
   rgw:
     ec-data-pool: false
 
-  # Crimson OSD: skip known-bad cls_refcount cases (see qa/workunits/cls/
-  # test_cls_refcount.sh). When CRIMSON_SKIP_EC_TESTS is set, that script uses
-  # --gtest_filter to drop *_ec tests and cls_refcount.test_put_snap. Remove
-  # once crimson matches classic behavior on those paths.
+  # Only used when the suite runs teuthology "workunit" tasks.
+  # See qa/workunits/cls/test_cls_refcount.sh for what this skips.
   workunit:
     env:
       CRIMSON_SKIP_EC_TESTS: "1"
 
-  # thrashosds: match qa/suites/crimson-rados/thrash/thrashers/default.yaml.
-  # Crimson has no OpTracker (no osd_enable_op_tracker); disable optrack toggle
-  # and other classic-only / overly aggressive thrash actions.
+  # Only used when the suite runs teuthology "thrashosds".
+  # Match qa/suites/crimson-rados/thrash/thrashers/default.yaml: disable actions
+  # that assume classic OSD (OpTracker, ceph-objectstore-tool, dump_blocked_ops).
+  # min_in / chance_down are intentionally NOT set here — those belong in each
+  # suite's thrasher fragment (cluster size varies).
   thrashosds:
     ceph_objectstore_tool: false
     dump_ops_enable: false
@@ -102,27 +129,84 @@ overrides:
     chance_reset_purged_snaps_last: 0
     chance_trim_stale_osdmaps: 0
 
+# ---------------------------------------------------------------------------
+# teuthology: special keys interpreted by teuthology itself (not ceph).
+#
+# postmerge: Lua run once per job AFTER all YAML fragments are merged.
+#   - reject() drops the job (not scheduled)
+#   - accept() / fall-through keeps the job
+#   - can edit the merged yaml (tasks, overrides) before scheduling
+# ---------------------------------------------------------------------------
 teuthology:
   postmerge:
     - |
       local y = py_attrgetter(yaml)
+
+      -- (1) OS filter: skip jobs on Ubuntu (no crimson packages in CI yet).
       local os_type = y.get('os_type')
       if os_type == 'ubuntu' then
         log.debug('skipping crimson OSD on ubuntu: builds not ready')
         reject()
       end
+
+      -- (2) Install extras: add ceph-osd-crimson RPMs to overrides.install.ceph.
+      --
+      -- Many workloads set optional packages, e.g.:
+      --   overrides:
+      --     install:
+      --       ceph:
+      --         extra_packages: [rbd-nbd]
+      --
+      -- Teuthology requires extra_packages to be either a list OR a deb/rpm dict
+      -- everywhere in one job — never mixed. We always output a flat list here.
+      -- Jobs with no prior extra_packages get only the two crimson package names.
+      -- The normal suite "install:" task picks this up from overrides at run time.
+      local overrides = y.get('overrides')
+      if overrides == nil then
+        overrides = py_dict()
+      end
+      local install_ov = py_attrgetter(overrides).get('install')
+      if install_ov == nil then
+        install_ov = py_dict()
+      end
+      local ceph_ov = py_attrgetter(install_ov).get('ceph')
+      if ceph_ov == nil then
+        ceph_ov = py_dict()
+      end
+      local ep = py_attrgetter(ceph_ov).get('extra_packages')
+      local pkgs = py_list()
+      if ep ~= nil then
+        local s = tostring(ep)
+        if s:find("'deb'", 1, false) ~= nil then
+          -- Was dict form {deb: [...], rpm: [...]} — flatten into one list.
+          local epa = py_attrgetter(ep)
+          local d = epa.get('deb')
+          local r = epa.get('rpm')
+          if d ~= nil then
+            for _, p in py_enumerate(d) do py_attrgetter(pkgs).append(p) end
+          end
+          if r ~= nil then
+            for _, p in py_enumerate(r) do py_attrgetter(pkgs).append(p) end
+          end
+        else
+          -- Already list form [pkg, ...] — copy existing entries.
+          for _, p in py_enumerate(ep) do py_attrgetter(pkgs).append(p) end
+        end
+      end
+      py_attrgetter(pkgs).append('ceph-osd-crimson')
+      py_attrgetter(pkgs).append('ceph-osd-crimson-debuginfo')
+      ceph_ov['extra_packages'] = pkgs
+      install_ov['ceph'] = ceph_ov
+      overrides['install'] = install_ov
+      local ov_upd = py_dict()
+      ov_upd['overrides'] = overrides
+      y.update(ov_upd)
+
+      -- (3) Task order: move our pexec block to immediately after the first
+      -- "install" task so alternatives are set before "ceph" starts OSDs.
       local tasks = y.get('tasks')
       if tasks == nil then
-        accept()
-      end
-
-      -- NOTE: This Lua environment is sandboxed and does not expose `pcall`, and
-      -- some lupa bridges will throw when probing python proxy attributes on
-      -- non-dict objects. So we avoid `.get()` entirely and match on stringified
-      -- task content instead.
-      local function is_crimson_install(t)
-        local s = tostring(t)
-        return s:find('ceph%-osd%-crimson', 1, false) ~= nil
+        return
       end
 
       local function is_crimson_switch(t)
@@ -133,7 +217,7 @@ teuthology:
       local to_move = py_list()
       local rest = py_list()
       for _, t in py_enumerate(tasks) do
-        if is_crimson_install(t) or is_crimson_switch(t) then
+        if is_crimson_switch(t) then
           py_attrgetter(to_move).append(t)
         else
           py_attrgetter(rest).append(t)
@@ -141,11 +225,6 @@ teuthology:
       end
 
       if py_len(to_move) > 0 then
-        -- Keep the suite's first (base) install task first.  Teuthology's
-        -- get_install_task_flavor() only inspects that task; if the crimson
-        -- install (extra_packages as a deb/rpm dict) is moved ahead of it,
-        -- deep_merge with workload overrides that use extra_packages as a
-        -- flat list raises AssertionError during scheduling.
         local new_tasks = py_list()
         local nt = py_attrgetter(new_tasks)
         local inserted = false
