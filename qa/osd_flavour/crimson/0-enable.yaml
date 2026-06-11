@@ -21,8 +21,8 @@ tasks:
   #
   # We do NOT add a second "install:" task here. Crimson RPMs are requested via
   # overrides.install.ceph.extra_packages in postmerge (see bottom of file).
-  # That avoids teuthology deep_merge errors when workloads also set extras
-  # (e.g. extra_packages: [rbd-nbd] on encryption/device jobs).
+  # That avoids teuthology deep_merge errors when workloads also set extras.
+  # Postmerge appends crimson packages to the install task (dict or list; see bottom).
   #
   # This pexec block only switches /usr/bin/ceph-osd to the crimson binary.
   # It must run after "install" and before "ceph" (postmerge enforces that).
@@ -149,62 +149,143 @@ teuthology:
         reject()
       end
 
-      -- (2) Install extras: add ceph-osd-crimson RPMs to overrides.install.ceph.
-      --
-      -- Many workloads set optional packages, e.g.:
-      --   overrides:
-      --     install:
-      --       ceph:
-      --         extra_packages: [rbd-nbd]
+      -- (1b) CephFS filters: skip jobs that need classic-only OSD setups.
+      -- client_full / mds-full force memstore; EC facets need cephfs.ec_profile.
+      if description:find('client_full', 1, true) then
+        log.debug('skipping crimson: CephFS client_full uses memstore')
+        reject()
+      end
+      if description:find('mds%-full', 1, false) then
+        log.debug('skipping crimson: CephFS mds-full uses memstore')
+        reject()
+      end
+      if description:find('objectstore%-ec', 1, false) then
+        log.debug('skipping crimson: CephFS EC data pool (objectstore-ec)')
+        reject()
+      end
+      if description:find('bluestore%-ec%-root', 1, false) then
+        log.debug('skipping crimson: CephFS EC data pool (bluestore-ec-root)')
+        reject()
+      end
+
+      -- (1c) RBD filters: qa/rbd/data-pool/ec.yaml sets allow_ec_overwrites and
+      -- forces classic bluestore; fails on crimson OSD (exec exit 22 at bring-up).
+      -- CRIMSON_SKIP_EC_TESTS only skips some workunits, not this cluster setup.
+      if description:find('data%-pool/ec', 1, false) then
+        log.debug('skipping crimson: RBD EC data pool (data-pool/ec)')
+        reject()
+      end
+
+      -- (2) Install extras: add ceph-osd-crimson packages for the install task.
       --
       -- Teuthology requires extra_packages to be either a list OR a deb/rpm dict
-      -- everywhere in one job — never mixed. We always output a flat list here.
-      -- Jobs with no prior extra_packages get only the two crimson package names.
-      -- The normal suite "install:" task picks this up from overrides at run time.
-      local overrides = y.get('overrides')
-      if overrides == nil then
-        overrides = py_dict()
-      end
-      local install_ov = py_attrgetter(overrides).get('install')
-      if install_ov == nil then
-        install_ov = py_dict()
-      end
-      local ceph_ov = py_attrgetter(install_ov).get('ceph')
-      if ceph_ov == nil then
-        ceph_ov = py_dict()
-      end
-      local ep = py_attrgetter(ceph_ov).get('extra_packages')
-      local pkgs = py_list()
-      if ep ~= nil then
+      -- everywhere in one job — never mixed. CephFS uses dict form on the install
+      -- task (qa/cephfs/begin/0-install.yaml); RBD/RGW use list overrides.
+      -- For dict form, append directly to the install task's deb/rpm lists (no new
+      -- dict in Lua — py_tuple/py_dict are awkward in the postmerge sandbox).
+      -- For list form, set overrides.install.ceph.extra_packages as a flat list.
+      local function extra_packages_is_dict(ep)
+        if ep == nil then
+          return false
+        end
         local s = tostring(ep)
-        if s:find("'deb'", 1, false) ~= nil then
-          -- Was dict form {deb: [...], rpm: [...]} — flatten into one list.
-          local epa = py_attrgetter(ep)
-          local d = epa.get('deb')
-          local r = epa.get('rpm')
-          if d ~= nil then
-            for _, p in py_enumerate(d) do py_attrgetter(pkgs).append(p) end
+        return s:find("'deb'", 1, false) ~= nil or s:find("'rpm'", 1, false) ~= nil
+      end
+
+      local function append_unique(lst, pkg)
+        for _, p in py_enumerate(lst) do
+          if tostring(p) == pkg then
+            return
           end
-          if r ~= nil then
-            for _, p in py_enumerate(r) do py_attrgetter(pkgs).append(p) end
-          end
-        else
-          -- Already list form [pkg, ...] — copy existing entries.
-          for _, p in py_enumerate(ep) do py_attrgetter(pkgs).append(p) end
+        end
+        py_attrgetter(lst).append(pkg)
+      end
+
+      local function copy_list_into(target, src)
+        if src == nil then
+          return
+        end
+        for _, p in py_enumerate(src) do
+          append_unique(target, tostring(p))
         end
       end
-      py_attrgetter(pkgs).append('ceph-osd-crimson')
-      py_attrgetter(pkgs).append('ceph-osd-crimson-debuginfo')
-      ceph_ov['extra_packages'] = pkgs
-      install_ov['ceph'] = ceph_ov
-      overrides['install'] = install_ov
-      local ov_upd = py_dict()
-      ov_upd['overrides'] = overrides
-      y.update(ov_upd)
+
+      local function add_crimson_to_dict_ep(ep)
+        local epa = py_attrgetter(ep)
+        local deb = epa.get('deb')
+        local rpm = epa.get('rpm')
+        if deb ~= nil then
+          append_unique(deb, 'ceph-osd-crimson')
+          append_unique(deb, 'ceph-osd-crimson-debuginfo')
+        end
+        if rpm ~= nil then
+          append_unique(rpm, 'ceph-osd-crimson')
+          append_unique(rpm, 'ceph-osd-crimson-debuginfo')
+        end
+      end
+
+      local tasks = y.get('tasks')
+      local install_task_ep = nil
+      if tasks ~= nil then
+        for _, t in py_enumerate(tasks) do
+          local inst = py_attrgetter(t).get('install')
+          if inst ~= nil then
+            install_task_ep = py_attrgetter(inst).get('extra_packages')
+            break
+          end
+        end
+      end
+
+      local overrides = y.get('overrides')
+      local install_ov = nil
+      local ceph_ov = nil
+      local ov_ep = nil
+      if overrides ~= nil then
+        install_ov = py_attrgetter(overrides).get('install')
+        if install_ov ~= nil then
+          ceph_ov = py_attrgetter(install_ov).get('ceph')
+          if ceph_ov ~= nil then
+            ov_ep = py_attrgetter(ceph_ov).get('extra_packages')
+          end
+        end
+      end
+
+      if extra_packages_is_dict(install_task_ep) then
+        add_crimson_to_dict_ep(install_task_ep)
+        -- A list override would dict+list merge and break scheduling.
+        if ceph_ov ~= nil and ov_ep ~= nil and not extra_packages_is_dict(ov_ep) then
+          py_attrgetter(ceph_ov).pop('extra_packages', nil)
+        end
+      elseif extra_packages_is_dict(ov_ep) then
+        add_crimson_to_dict_ep(ov_ep)
+      else
+        if overrides == nil then
+          overrides = py_dict()
+        end
+        if install_ov == nil then
+          install_ov = py_dict()
+        end
+        if ceph_ov == nil then
+          ceph_ov = py_dict()
+        end
+        local pkgs = py_list()
+        if ov_ep ~= nil then
+          for _, p in py_enumerate(ov_ep) do
+            append_unique(pkgs, tostring(p))
+          end
+        end
+        append_unique(pkgs, 'ceph-osd-crimson')
+        append_unique(pkgs, 'ceph-osd-crimson-debuginfo')
+        ceph_ov['extra_packages'] = pkgs
+        install_ov['ceph'] = ceph_ov
+        overrides['install'] = install_ov
+        local ov_upd = py_dict()
+        ov_upd['overrides'] = overrides
+        y.update(ov_upd)
+      end
 
       -- (3) Task order: move our pexec block to immediately after the first
       -- "install" task so alternatives are set before "ceph" starts OSDs.
-      local tasks = y.get('tasks')
       if tasks == nil then
         return
       end
