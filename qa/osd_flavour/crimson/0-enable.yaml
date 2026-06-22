@@ -98,6 +98,9 @@ overrides:
         # Crimson + SeaStore + EC can be CPU-hungry; 1 shard is easy to stall.
         # Suites can still override for perf or tiny clusters.
         crimson cpu num: 4
+        # SeaStore defaults to 16M; RBD stripes (e.g. 32M) need more for
+        # copyup+zero during trim.  Ignored when objectstore is bluestore.
+        seastore default max object size: 134217728
 
   # Only used when the suite runs the teuthology "cephadm" task (not legacy ceph).
   cephadm:
