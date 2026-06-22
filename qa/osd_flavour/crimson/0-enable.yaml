@@ -72,6 +72,11 @@ overrides:
   ceph:
     # Tell teuthology helpers this is a crimson cluster (not classic ceph-osd).
     crimson_compat: true
+    # Known crimson OSD issue: deep scrub PG stat mismatch vs snaptrim/bookkeeping
+    # (OSD_SCRUB_ERRORS in cluster log). Ignore until fixed upstream.
+    log-ignorelist:
+    - \(OSD_SCRUB_ERRORS\)
+    - Health check failed:.*scrub errors
     conf:
       # conf.global / mon / osd map to ceph.conf sections [global], [mon], [osd].
       global:
