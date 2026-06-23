@@ -356,6 +356,26 @@ public:
 
   seastar::future<> broadcast_map_to_pgs(epoch_t epoch);
 
+  /// Ensure local merge participants exist for merges in (first, last].
+  ///
+  /// Scans every crimson pool whose pg_num shrank between consecutive maps in
+  /// the range and, for each merge this OSD is in the acting set for, makes
+  /// sure both the target and its source PGs are instantiated (as empty
+  /// placeholders if necessary) on a single, shared shard.  This is the
+  /// crimson analogue of classic OSDShard::prime_merges(): without it,
+  /// ShardServices::register_merge_source() can find no target PG and abort.
+  seastar::future<> prime_merges(epoch_t first, epoch_t last);
+
+  /// Prime a single merge (one target plus its source siblings) at
+  /// merge_epoch.  Picks a shared "home" shard for the participants and
+  /// instantiates any that are missing on that shard.
+  seastar::future<> prime_one_merge(
+    spg_t target,
+    std::set<spg_t> sources,
+    epoch_t merge_epoch,
+    int whoami,
+    cached_map_t merge_map);
+
   template <typename F>
   auto with_pg(spg_t pgid, F &&f) {
     core_id_t core = get_pg_to_shard_mapping().get_pg_mapping(pgid);
