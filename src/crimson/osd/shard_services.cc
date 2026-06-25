@@ -106,6 +106,80 @@ seastar::future<> PerShardState::broadcast_map_to_pgs(
 	PeeringCtx{}, false).second;
     });
 }
+seastar::future<std::set<std::pair<spg_t, epoch_t>>>
+ShardServices::identify_merges(
+  cached_map_t old_map,
+  cached_map_t new_map,
+  spg_t pgid)
+{
+  LOG_PREFIX(ShardServices::identify_merges);
+  DEBUG("checking {} from epoch {} to {}", pgid,
+        old_map->get_epoch(), new_map->get_epoch());
+
+  std::set<std::pair<spg_t, epoch_t>> merge_pgs;
+
+  if (!old_map->have_pg_pool(pgid.pool())) {
+    DEBUG("{} pool {} does not exist in old map",
+          pgid, pgid.pool());
+    co_return merge_pgs;
+  }
+
+  if (!new_map->have_pg_pool(pgid.pool())) {
+    DEBUG("{} pool {} does not exist in new map",
+          pgid, pgid.pool());
+    co_return merge_pgs;
+  }
+
+  unsigned old_pgnum = old_map->get_pg_num(pgid.pool());
+  unsigned new_pgnum = new_map->get_pg_num(pgid.pool());
+
+  DEBUG("{} pool {} pg_num {} -> {}",
+        pgid, pgid.pool(), old_pgnum, new_pgnum);
+
+  // Only handle merges (pg_num decrease)
+  if (new_pgnum >= old_pgnum) {
+    co_return merge_pgs;
+  }
+
+  // Check if this PG is a merge participant
+  if (pgid.ps() >= new_pgnum) {
+    if (pgid.ps() < old_pgnum) {
+      // This PG is a merge source
+      spg_t parent;
+      if (pgid.is_merge_source(old_pgnum, new_pgnum, &parent)) {
+        std::set<spg_t> children;
+        parent.is_split(new_pgnum, old_pgnum, &children);
+        DEBUG("{} is merge source, target {}, sources {}",
+              pgid, parent, children);
+        
+        // Add parent (target) to merge_pgs
+        merge_pgs.insert(std::make_pair(parent, new_map->get_epoch()));
+        
+        // Add all children (sources) to merge_pgs
+        for (auto c : children) {
+          merge_pgs.insert(std::make_pair(c, new_map->get_epoch()));
+        }
+      }
+    }
+  } else {
+    // This PG might be a merge target
+    std::set<spg_t> children;
+    if (pgid.is_split(new_pgnum, old_pgnum, &children)) {
+      DEBUG("{} is merge target, sources {}", pgid, children);
+      
+      // Add target to merge_pgs
+      merge_pgs.insert(std::make_pair(pgid, new_map->get_epoch()));
+      
+      // Add all sources to merge_pgs
+      for (auto c : children) {
+        merge_pgs.insert(std::make_pair(c, new_map->get_epoch()));
+      }
+    }
+  }
+  
+  co_return merge_pgs;
+}
+
 
 seastar::future<Ref<PG>> ShardServices::extract_pg(spg_t pgid) {
   auto pg = local_state.pg_map.get_pg(pgid);
@@ -113,6 +187,43 @@ seastar::future<Ref<PG>> ShardServices::extract_pg(spg_t pgid) {
   co_await remove_pg(pgid);
   co_return pg;
 }
+seastar::future<> ShardServices::prime_merge_participant(
+  spg_t pgid,
+  store_index_t store_index,
+  epoch_t merge_epoch)
+{
+  LOG_PREFIX(ShardServices::prime_merge_participant);
+  
+  // Check if PG already exists
+  if (local_state.pg_map.get_pg(pgid)) {
+    DEBUG("{} already exists, skipping placeholder creation", pgid);
+    co_return;
+  }
+
+  DEBUG("creating placeholder PG {} for merge at epoch {}",
+        pgid, merge_epoch);
+
+  // Create empty PGCreateInfo with zeroed history, similar to Classic OSD's
+  // prime_merges(). The actual history will be filled in by PG::merge_from().
+  pg_history_t history;
+  PGCreateInfo cinfo(
+    pgid,
+    merge_epoch - 1,  // Register at epoch before merge
+    history,
+    PastIntervals(),
+    false  // not a split child
+  );
+
+  // Instantiate the placeholder PG
+  try {
+    auto pg = co_await handle_pg_create_info(store_index, std::make_unique<PGCreateInfo>(std::move(cinfo)));
+    DEBUG("created placeholder PG {} at epoch {}", pgid, merge_epoch - 1);
+  } catch (const std::exception& e) {
+    ERROR("failed to create placeholder PG {}: {}", pgid, e.what());
+    throw;
+  }
+}
+
 
 seastar::future<> ShardServices::register_merge_source(
     spg_t target,

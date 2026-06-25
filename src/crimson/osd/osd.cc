@@ -1344,8 +1344,12 @@ seastar::future<> OSD::committed_osd_maps(
     // newly-created participants are advanced through the merge epoch (and
     // perform merge_from()) by the broadcast below instead of asserting in
     // ShardServices::register_merge_source().
+    //
+    // Note: Currently handles replicated pools only. For future EC pool support,
+    // prime_merges() will need to enumerate all shards this OSD hosts (see
+    // comment in pg_shard_manager.cc for details).
     co_await pg_shard_manager.prime_merges(first, last);
-    // yay!
+    
     INFO("osd.{}: committed_osd_maps: broadcasting osdmaps up"
          " to {} epoch to pgs", whoami, osdmap->get_epoch());
     co_await pg_shard_manager.broadcast_map_to_pgs(osdmap->get_epoch());

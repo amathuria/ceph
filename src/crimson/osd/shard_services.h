@@ -681,6 +681,15 @@ public:
 
   seastar::future<Ref<PG>> extract_pg(spg_t pgid);
 
+  // Identify merge participants for a given PG between two OSDMap epochs.
+  // Simplified version that compares pg_num between two consecutive epochs
+  // without requiring full pg_num_history tracking. Returns a set of
+  // (pgid, merge_epoch) pairs for all merge participants (both source and target).
+  seastar::future<std::set<std::pair<spg_t, epoch_t>>> identify_merges(
+    cached_map_t old_map,
+    cached_map_t new_map,
+    spg_t pgid);
+
   // Instantiate an empty placeholder PG for a merge participant that is not
   // currently live on this shard, registering it at (merge_epoch - 1) WITHOUT
   // advancing it.  The caller (PGShardManager::prime_merges) runs this before
