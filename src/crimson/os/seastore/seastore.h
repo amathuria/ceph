@@ -56,6 +56,14 @@ enum class txn_stage_t : uint8_t {
     // Sub-phases of submit_transaction:
     SUBMIT_RESERVE,        // enter(reserve_projected_usage) + epm reserve_projected_usage
     SUBMIT_OOL_WRITE,      // write_delayed + write_preallocated OOL extents (device I/O)
+    // SegmentedOolWriter (segmented device backend):
+    SUBMIT_OOL_SEG_DELAYED,// write_delayed_ool_extents (fresh data/metadata path)
+    OOL_SEG_WAIT,          // RecordSubmitter::wait_available (backpressure)
+    OOL_SEG_ROLL,          // RecordSubmitter::roll_segment
+    OOL_SEG_IO,            // SegmentedOolWriter::write_record device futures
+    // RandomBlockOolWriter (RBM backend):
+    SUBMIT_OOL_RBM,        // write_preallocated_ool_extents
+    OOL_RBM_IO,            // RandomBlockOolWriter::do_write device futures
     SUBMIT_LBA_UPDATE,     // update_lba_mappings
     SUBMIT_PREPARE_ENTER,  // enter(prepare) pipeline stage (global OrderedExclusive wait)
     SUBMIT_PREPARE_RECORD, // prepare_record (record encoding)

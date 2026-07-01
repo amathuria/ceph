@@ -229,8 +229,8 @@ public:
       delayed_alloc_list.emplace_back(ref);
       fresh_block_stats.increment(ref->get_length());
     } else if (ref->get_paddr().is_absolute_random_block()) {
-      pre_alloc_list.emplace_back(ref);
-      fresh_block_stats.increment(ref->get_length());
+      pre_alloc_list.emplace_back(ref); // RBM OOL extents are pre-allocated here
+      fresh_block_stats.increment(ref->get_length()); 
     } else {
 #ifdef UNIT_TESTS_BUILT
       if (likely(ref->get_paddr() == make_record_relative_paddr(0))) {
@@ -243,8 +243,8 @@ public:
       ref->set_paddr(make_record_relative_paddr(offset));
 #endif
       offset += ref->get_length();
-      inline_block_list.push_back(ref);
-      fresh_block_stats.increment(ref->get_length());
+      inline_block_list.push_back(ref); // INLINE -> journal
+      fresh_block_stats.increment(ref->get_length()); 
     }
     write_set.insert(*ref);
     if (is_backref_node(ref->get_type()))
@@ -475,6 +475,14 @@ public:
   struct phase_durations_t {
     std::chrono::steady_clock::duration reserve{0};         // enter reserve + epm reserve
     std::chrono::steady_clock::duration ool_write{0};       // delayed + preallocated OOL writes
+    // Segmented backend (SegmentedOolWriter):
+    std::chrono::steady_clock::duration ool_seg_delayed{0}; // write_delayed_ool_extents
+    std::chrono::steady_clock::duration ool_seg_wait{0};      // RecordSubmitter::wait_available
+    std::chrono::steady_clock::duration ool_seg_roll{0};      // RecordSubmitter::roll_segment
+    std::chrono::steady_clock::duration ool_seg_io{0};        // write_record device futures
+    // Random-block backend (RandomBlockOolWriter):
+    std::chrono::steady_clock::duration ool_rbm{0};           // write_preallocated_ool_extents
+    std::chrono::steady_clock::duration ool_rbm_io{0};        // RBM::write device futures
     std::chrono::steady_clock::duration lba_update{0};      // update_lba_mappings
     std::chrono::steady_clock::duration prepare_enter{0};   // enter(prepare) pipeline stage
     std::chrono::steady_clock::duration prepare_record{0};  // prepare_record
