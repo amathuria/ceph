@@ -221,6 +221,12 @@ void SeaStore::Shard::register_metrics(store_index_t store_index)
     {txn_stage_t::SUBMIT_TOTAL,          sm::label_instance("stage", "submit_total")},
     {txn_stage_t::SUBMIT_RESERVE,        sm::label_instance("stage", "submit_reserve")},
     {txn_stage_t::SUBMIT_OOL_WRITE,      sm::label_instance("stage", "submit_ool_write")},
+    {txn_stage_t::SUBMIT_OOL_SEG_DELAYED, sm::label_instance("stage", "submit_ool_seg_delayed")},
+    {txn_stage_t::SUBMIT_OOL_RBM,        sm::label_instance("stage", "submit_ool_rbm")},
+    {txn_stage_t::OOL_SEG_WAIT,          sm::label_instance("stage", "ool_seg_wait")},
+    {txn_stage_t::OOL_SEG_ROLL,          sm::label_instance("stage", "ool_seg_roll")},
+    {txn_stage_t::OOL_SEG_IO,            sm::label_instance("stage", "ool_seg_io")},
+    {txn_stage_t::OOL_RBM_IO,            sm::label_instance("stage", "ool_rbm_io")},
     {txn_stage_t::SUBMIT_LBA_UPDATE,     sm::label_instance("stage", "submit_lba_update")},
     {txn_stage_t::SUBMIT_PREPARE_ENTER,  sm::label_instance("stage", "submit_prepare_enter")},
     {txn_stage_t::SUBMIT_PREPARE_RECORD, sm::label_instance("stage", "submit_prepare_record")},
@@ -1778,6 +1784,20 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
     auto& pd = ctx.transaction->get_phase_durations();
     add_stage_latency_sample(txn_stage_t::SUBMIT_RESERVE, pd.reserve);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE, pd.ool_write);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_SEG_DELAYED, pd.ool_seg_delayed);
+    if (pd.ool_rbm > std::chrono::steady_clock::duration::zero()) {
+      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_RBM, pd.ool_rbm);
+    }
+    if (pd.ool_seg_wait > std::chrono::steady_clock::duration::zero()) {
+      add_stage_latency_sample(txn_stage_t::OOL_SEG_WAIT, pd.ool_seg_wait);
+    }
+    if (pd.ool_seg_roll > std::chrono::steady_clock::duration::zero()) {
+      add_stage_latency_sample(txn_stage_t::OOL_SEG_ROLL, pd.ool_seg_roll);
+    }
+    add_stage_latency_sample(txn_stage_t::OOL_SEG_IO, pd.ool_seg_io);
+    if (pd.ool_rbm_io > std::chrono::steady_clock::duration::zero()) {
+      add_stage_latency_sample(txn_stage_t::OOL_RBM_IO, pd.ool_rbm_io);
+    }
     add_stage_latency_sample(txn_stage_t::SUBMIT_LBA_UPDATE, pd.lba_update);
     add_stage_latency_sample(txn_stage_t::SUBMIT_PREPARE_ENTER, pd.prepare_enter);
     add_stage_latency_sample(txn_stage_t::SUBMIT_PREPARE_RECORD, pd.prepare_record);
