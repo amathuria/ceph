@@ -285,6 +285,11 @@ public:
 
     static void transaction_dump(ceph::os::Transaction &t);
 
+    void maybe_log_slow_transaction(
+      const internal_context_t &ctx,
+      std::chrono::steady_clock::duration collock_wait,
+      std::chrono::steady_clock::duration throttler_wait) const;
+
     template <typename Ret, typename F>
     auto repeat_with_onode(
       CollectionRef ch,

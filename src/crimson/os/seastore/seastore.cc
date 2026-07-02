@@ -1674,6 +1674,103 @@ void SeaStore::Shard::transaction_dump(ceph::os::Transaction &t) {
   ERROR("{}", str.str());
 }
 
+namespace {
+
+uint64_t duration_us(std::chrono::steady_clock::duration d)
+{
+  return std::chrono::duration_cast<std::chrono::microseconds>(d).count();
+}
+
+double pct(uint64_t part_us, uint64_t total_us)
+{
+  return total_us > 0
+    ? 100.0 * static_cast<double>(part_us) / static_cast<double>(total_us)
+    : 0.0;
+}
+
+} // namespace
+
+void SeaStore::Shard::maybe_log_slow_transaction(
+  const internal_context_t &ctx,
+  std::chrono::steady_clock::duration collock_wait,
+  std::chrono::steady_clock::duration throttler_wait) const
+{
+  const auto threshold_us = get_conf<uint64_t>(
+    "seastore_slow_transaction_log_threshold_us");
+  if (threshold_us == 0) {
+    return;
+  }
+
+  const auto total = std::chrono::steady_clock::now() - ctx.begin_timestamp;
+  const auto total_us = duration_us(total);
+  if (total_us < threshold_us) {
+    return;
+  }
+
+  LOG_PREFIX(SeaStoreS::maybe_log_slow_transaction);
+  auto &t = *ctx.transaction;
+  const auto &pd = t.get_phase_durations();
+  const auto &ool = t.get_ool_write_stats();
+
+  const auto collock_us = duration_us(collock_wait);
+  const auto throttler_us = duration_us(throttler_wait);
+  const auto build_us = duration_us(ctx.build_time);
+  const auto get_onode_us = duration_us(ctx.get_onode_time);
+  const auto submit_us = duration_us(ctx.submit_time);
+  const auto reserve_us = duration_us(pd.reserve);
+  const auto ool_write_us = duration_us(pd.ool_write);
+  const auto ool_seg_delayed_us = duration_us(pd.ool_seg_delayed);
+  const auto ool_rbm_us = duration_us(pd.ool_rbm);
+  const auto ool_seg_wait_us = duration_us(pd.ool_seg_wait);
+  const auto ool_seg_roll_us = duration_us(pd.ool_seg_roll);
+  const auto ool_seg_io_us = duration_us(pd.ool_seg_io);
+  const auto ool_rbm_io_us = duration_us(pd.ool_rbm_io);
+  const auto lba_us = duration_us(pd.lba_update);
+  const auto prepare_enter_us = duration_us(pd.prepare_enter);
+  const auto prepare_record_us = duration_us(pd.prepare_record);
+  const auto journal_us = duration_us(pd.journal);
+
+  SUBWARNT(
+    seastore,
+    "slow transaction cid={} ops={} bytes=0x{:x} replays={} "
+    "total_us={} "
+    "wait: collock_us={} ({:.1f}%) throttler_us={} ({:.1f}%) "
+    "build_us={} ({:.1f}%) get_onode_us={} ({:.1f}%) submit_us={} ({:.1f}%) "
+    "submit: reserve_us={} ool_write_us={} ({:.1f}%) "
+    "seg: delayed_us={} wait_us={} roll_us={} io_us={} "
+    "rbm: total_us={} io_us={} "
+    "lba_us={} "
+    "prepare_enter_us={} prepare_record_us={} journal_us={} ({:.1f}%) "
+    "ool: data_bytes=0x{:x} md_bytes=0x{:x} records={} extents={} "
+    "ool_us_per_data_kb={:.1f}",
+    t,
+    ctx.ch->get_cid(),
+    ctx.ext_transaction.get_num_ops(),
+    ctx.ext_transaction.get_num_bytes(),
+    t.get_num_replays(),
+    total_us,
+    collock_us, pct(collock_us, total_us),
+    throttler_us, pct(throttler_us, total_us),
+    build_us, pct(build_us, total_us),
+    get_onode_us, pct(get_onode_us, total_us),
+    submit_us, pct(submit_us, total_us),
+    reserve_us,
+    ool_write_us, pct(ool_write_us, total_us),
+    ool_seg_delayed_us, ool_seg_wait_us, ool_seg_roll_us, ool_seg_io_us,
+    ool_rbm_us, ool_rbm_io_us,
+    lba_us,
+    prepare_enter_us,
+    prepare_record_us,
+    journal_us, pct(journal_us, total_us),
+    ool.get_data_bytes(),
+    ool.md_bytes,
+    ool.num_records,
+    ool.extents.num,
+    ool.get_data_bytes() > 0
+      ? static_cast<double>(ool_write_us) / (ool.get_data_bytes() / 1024.0)
+      : 0.0);
+}
+
 seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
   CollectionRef _ch,
   ceph::os::Transaction&& _t)
@@ -1806,6 +1903,8 @@ seastar::future<> SeaStore::Shard::do_transaction_no_callbacks(
   add_latency_sample(
     op_type_t::DO_TRANSACTION,
     std::chrono::steady_clock::now() - ctx.begin_timestamp);
+
+  maybe_log_slow_transaction(ctx, collock_wait, throttler_wait);
 
   throttler.put();
 
