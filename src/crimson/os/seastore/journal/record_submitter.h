@@ -15,6 +15,7 @@
 #include "crimson/common/errorator.h"
 #include "crimson/os/seastore/segment_manager_group.h"
 #include "crimson/os/seastore/segment_seq_allocator.h"
+#include "crimson/os/seastore/async_cleaner.h"
 
 namespace crimson::os::seastore {
   class SegmentProvider;
@@ -25,6 +26,15 @@ namespace crimson::os::seastore::journal {
 
 class JournalAllocator {
 public:
+  // Wall times for the last completed SegmentAllocator::roll()
+  // (close_segment + do_open). Other allocators leave zeros.
+  struct roll_parts_t {
+    seastar::lowres_clock::duration close{0};
+    seastar::lowres_clock::duration open{0};
+  };
+
+  virtual ~JournalAllocator() = default;
+
   virtual const std::string& get_name() const = 0;
   
   virtual void update_modify_time(record_t& record) = 0;
@@ -45,6 +55,10 @@ public:
   
   using roll_ertr = base_ertr;
   virtual roll_ertr::future<> roll() = 0;
+
+  virtual roll_parts_t get_last_roll_parts() const {
+    return {};
+  }
 
   virtual bool needs_roll(std::size_t length) const = 0;
 
@@ -299,7 +313,13 @@ public:
 
   // when available, roll the segment if needed
   using roll_segment_ertr = base_ertr;
-  roll_segment_ertr::future<> roll_segment();
+  // Optional out-param: flush_prep + allocator close/open breakdown.
+  struct roll_timings_t {
+    seastar::lowres_clock::duration flush_prep{0};
+    seastar::lowres_clock::duration close{0};
+    seastar::lowres_clock::duration open{0};
+  };
+  roll_segment_ertr::future<> roll_segment(roll_timings_t* timings = nullptr);
 
   // when available, submit the record if possible
   using submit_ret = RecordBatch::add_pending_ret_t;

@@ -63,6 +63,9 @@ enum class txn_stage_t : uint8_t {
     SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL, // wait while roll_segment in progress
     SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL, // wait while FULL needs flush
     SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL, // RecordSubmitter::roll_segment
+    SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH, // flush prep before allocator.roll
+    SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE, // SegmentAllocator::close_segment
+    SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,  // SegmentAllocator::do_open
     SUBMIT_OOL_WRITE_SEG_DELAYED_IO,   // SegmentedOolWriter::write_record futures
     SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,  // wait until RecordSubmitter issues write
     SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE, // journal_allocator.write completion

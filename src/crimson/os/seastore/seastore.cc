@@ -232,10 +232,23 @@
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
      sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_full")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
+<<<<<<< HEAD
        sm::label_instance("stage", "submit_ool_write_seg_delayed_roll")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
+=======
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_flush")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
+>>>>>>> 7add2d4dc76 (Investigate the roll phase in detail)
      sm::label_instance("stage", "submit_ool_write_seg_delayed_io_queue")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
      sm::label_instance("stage", "submit_ool_write_seg_delayed_io_device")},
@@ -1896,10 +1909,23 @@
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
                              pd.ool_write_seg_delayed_wait_full);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
+<<<<<<< HEAD
                                pd.ool_write_seg_delayed_roll);
       add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
                                pd.ool_write_seg_delayed_io);
       add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
+=======
+                             pd.ool_write_seg_delayed_roll);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
+                             pd.ool_write_seg_delayed_roll_flush);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
+                             pd.ool_write_seg_delayed_roll_close);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
+                             pd.ool_write_seg_delayed_roll_open);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
+                             pd.ool_write_seg_delayed_io);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
+>>>>>>> 7add2d4dc76 (Investigate the roll phase in detail)
                              pd.ool_write_seg_delayed_io_queue);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
                              pd.ool_write_seg_delayed_io_device);

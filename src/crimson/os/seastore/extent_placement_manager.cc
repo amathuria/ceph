@@ -152,11 +152,18 @@ SegmentedOolWriter::do_write(
             true/* with_atomic_roll_segment */);
       }
       const auto roll_start = seastar::lowres_clock::now();
+      auto roll_timings = seastar::make_lw_shared<
+          journal::RecordSubmitter::roll_timings_t>();
       return trans_intr::make_interruptible(
-        record_submitter.roll_segment(
-        ).safe_then([fut_write=std::move(fut_write), &t, roll_start]() mutable {
-          t.get_phase_durations().ool_write_seg_delayed_roll +=
+        record_submitter.roll_segment(roll_timings.get()
+        ).safe_then([fut_write=std::move(fut_write), &t, roll_start,
+                     roll_timings]() mutable {
+          auto& pd = t.get_phase_durations();
+          pd.ool_write_seg_delayed_roll +=
             seastar::lowres_clock::now() - roll_start;
+          pd.ool_write_seg_delayed_roll_flush += roll_timings->flush_prep;
+          pd.ool_write_seg_delayed_roll_close += roll_timings->close;
+          pd.ool_write_seg_delayed_roll_open += roll_timings->open;
           return std::move(fut_write);
         })
       ).si_then([this, &t, &extents] {

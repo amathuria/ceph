@@ -84,6 +84,10 @@ class SegmentAllocator : public JournalAllocator {
   // close the current segment and initialize next one
   roll_ertr::future<> roll() final;
 
+  roll_parts_t get_last_roll_parts() const final {
+    return last_roll_parts;
+  }
+
   journal_seq_t get_written_to() const final;
 
   // write the buffer, return the write result
@@ -128,6 +132,7 @@ class SegmentAllocator : public JournalAllocator {
   SegmentSeqAllocator &segment_seq_allocator;
   segment_nonce_t current_segment_nonce;
   JournalTrimmer *trimmer;
+  roll_parts_t last_roll_parts;
 };
 
 }

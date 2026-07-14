@@ -242,7 +242,7 @@ RecordSubmitter::check_action(
 }
 
 RecordSubmitter::roll_segment_ertr::future<>
-RecordSubmitter::roll_segment()
+RecordSubmitter::roll_segment(roll_timings_t* timings)
 {
   LOG_PREFIX(RecordSubmitter::roll_segment);
   ceph_assert(p_current_batch->needs_flush() ||
@@ -250,6 +250,7 @@ RecordSubmitter::roll_segment()
   // #1 block concurrent submissions due to rolling
   set_unavailable(unavailable_reason_t::ROLLING);
   ceph_assert(!wait_unfull_flush_promise.has_value());
+  const auto flush_start = seastar::lowres_clock::now();
   return [FNAME, this] {
     if (p_current_batch->is_pending()) {
       if (state == state_t::FULL) {
@@ -265,7 +266,10 @@ RecordSubmitter::roll_segment()
       assert(p_current_batch->is_empty());
       return seastar::now();
     }
-  }().then_wrapped([FNAME, this](auto fut) {
+  }().then_wrapped([FNAME, this, timings, flush_start](auto fut) {
+    if (timings) {
+      timings->flush_prep = seastar::lowres_clock::now() - flush_start;
+    }
     if (fut.failed()) {
       ERROR("{} rolling is skipped unexpectedly, available", get_name());
       has_io_error = true;
@@ -292,7 +296,13 @@ RecordSubmitter::roll_segment()
         clear_unavailable();
       });
       // wait for background rolling
-      return wait_available();
+      return wait_available().finally([this, timings] {
+        if (timings) {
+          auto parts = journal_allocator.get_last_roll_parts();
+          timings->close = parts.close;
+          timings->open = parts.open;
+        }
+      });
     }
   });
 }
