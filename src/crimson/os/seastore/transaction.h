@@ -499,6 +499,8 @@ public:
     // Segmented backend (SegmentedOolWriter) — nested under ool_write:
     seastar::lowres_clock::duration ool_write_seg_delayed{0};      // write_delayed_ool_extents
     seastar::lowres_clock::duration ool_write_seg_delayed_wait{0}; // RecordSubmitter::wait_available
+    seastar::lowres_clock::duration ool_write_seg_delayed_wait_roll{0}; // unavailable: rolling
+    seastar::lowres_clock::duration ool_write_seg_delayed_wait_full{0}; // unavailable: FULL flush
     seastar::lowres_clock::duration ool_write_seg_delayed_roll{0}; // RecordSubmitter::roll_segment
     seastar::lowres_clock::duration ool_write_seg_delayed_io{0};   // write_record futures
     seastar::lowres_clock::duration ool_write_seg_delayed_io_queue{0};  // until device write issued

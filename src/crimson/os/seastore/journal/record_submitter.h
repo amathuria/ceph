@@ -270,6 +270,16 @@ public:
   // whether is available to submit a record
   bool is_available() const;
 
+  // Why is_available() is false (NONE if available).
+  enum class unavailable_reason_t : uint8_t {
+    NONE = 0,
+    ROLLING,      // roll_segment() in progress
+    FULL_FLUSH,   // needs_flush but io-depth FULL
+  };
+  unavailable_reason_t get_unavailable_reason() const {
+    return unavailable_reason;
+  }
+
   // get the stats since last_stats
   writer_stats_t get_stats() const;
 
@@ -313,6 +323,20 @@ public:
 private:
   void update_state();
 
+  void set_unavailable(unavailable_reason_t reason) {
+    assert(reason != unavailable_reason_t::NONE);
+    assert(!wait_available_promise.has_value());
+    wait_available_promise = seastar::shared_promise<>();
+    unavailable_reason = reason;
+  }
+
+  void clear_unavailable() {
+    assert(wait_available_promise.has_value());
+    wait_available_promise->set_value();
+    wait_available_promise.reset();
+    unavailable_reason = unavailable_reason_t::NONE;
+  }
+
   void increment_io() {
     ++num_outstanding_io;
     stats.io_depth_stats.increment(num_outstanding_io);
@@ -353,6 +377,7 @@ private:
 
   // blocked for rolling or lack of resource
   std::optional<seastar::shared_promise<> > wait_available_promise;
+  unavailable_reason_t unavailable_reason = unavailable_reason_t::NONE;
   bool has_io_error = false;
   // when needs flush but io depth is full,
   // wait for decrement_io_with_flush()

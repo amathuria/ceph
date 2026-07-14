@@ -248,7 +248,7 @@ RecordSubmitter::roll_segment()
   ceph_assert(p_current_batch->needs_flush() ||
               is_available());
   // #1 block concurrent submissions due to rolling
-  wait_available_promise = seastar::shared_promise<>();
+  set_unavailable(unavailable_reason_t::ROLLING);
   ceph_assert(!wait_unfull_flush_promise.has_value());
   return [FNAME, this] {
     if (p_current_batch->is_pending()) {
@@ -269,8 +269,7 @@ RecordSubmitter::roll_segment()
     if (fut.failed()) {
       ERROR("{} rolling is skipped unexpectedly, available", get_name());
       has_io_error = true;
-      wait_available_promise->set_value();
-      wait_available_promise.reset();
+      clear_unavailable();
       return roll_segment_ertr::now();
     } else {
       // start rolling in background
@@ -279,21 +278,18 @@ RecordSubmitter::roll_segment()
         // good
         DEBUG("{} rolling done, available", get_name());
         assert(!has_io_error);
-        wait_available_promise->set_value();
-        wait_available_promise.reset();
+        clear_unavailable();
       }).handle_error(
         crimson::ct_error::all_same_way([FNAME, this](auto e) {
           ERROR("{} got error {}, available", get_name(), e);
           has_io_error = true;
-          wait_available_promise->set_value();
-          wait_available_promise.reset();
+          clear_unavailable();
           return seastar::now();
         })
       ).handle_exception([FNAME, this](auto e) {
         ERROR("{} got exception {}, available", get_name(), e);
         has_io_error = true;
-        wait_available_promise->set_value();
-        wait_available_promise.reset();
+        clear_unavailable();
       });
       // wait for background rolling
       return wait_available();
@@ -384,15 +380,14 @@ RecordSubmitter::submit(
         // need to be delegated to the follow-up atomic roll_segment();
         assert(p_current_batch->is_pending());
       } else {
-        wait_available_promise = seastar::shared_promise<>();
+        set_unavailable(unavailable_reason_t::FULL_FLUSH);
         ceph_assert(!wait_unfull_flush_promise.has_value());
         wait_unfull_flush_promise = seastar::promise<>();
         // flush and mark available in background
         std::ignore = wait_unfull_flush_promise->get_future(
         ).finally([FNAME, this] {
           DEBUG("{} flush done, available", get_name());
-          wait_available_promise->set_value();
-          wait_available_promise.reset();
+          clear_unavailable();
         });
       }
     } else {
@@ -508,6 +503,7 @@ RecordSubmitter::close()
   ceph_assert(p_current_batch != nullptr);
   ceph_assert(p_current_batch->is_empty());
   ceph_assert(!wait_available_promise.has_value());
+  ceph_assert(unavailable_reason == unavailable_reason_t::NONE);
   has_io_error = false;
   ceph_assert(!wait_unfull_flush_promise.has_value());
   metrics.clear();

@@ -60,6 +60,8 @@ STAGES_ORDER = [
     'submit_ool_write',
     'submit_ool_write_seg_delayed',
     'submit_ool_write_seg_delayed_wait',
+    'submit_ool_write_seg_delayed_wait_roll',
+    'submit_ool_write_seg_delayed_wait_full',
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
@@ -79,6 +81,8 @@ OOL_FOCUS_STAGES = [
     'submit_ool_write',
     'submit_ool_write_seg_delayed',
     'submit_ool_write_seg_delayed_wait',
+    'submit_ool_write_seg_delayed_wait_roll',
+    'submit_ool_write_seg_delayed_wait_full',
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
@@ -94,6 +98,8 @@ OOL_FOCUS_STAGES = [
 OOL_SEG_SUB_PHASES = [
     'submit_ool_write_seg_delayed',
     'submit_ool_write_seg_delayed_wait',
+    'submit_ool_write_seg_delayed_wait_roll',
+    'submit_ool_write_seg_delayed_wait_full',
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
@@ -111,7 +117,10 @@ OOL_SUB_PHASES = OOL_SEG_SUB_PHASES + OOL_RBM_SUB_PHASES
 # near 0 while p99 reflects the rare non-zero hits.
 OOL_OFTEN_ZERO_STAGES = (
     'submit_ool_write_seg_delayed_wait',
+    'submit_ool_write_seg_delayed_wait_roll',
+    'submit_ool_write_seg_delayed_wait_full',
     'submit_ool_write_seg_delayed_roll',
+    'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_rbm',
     'submit_ool_write_rbm_io',
 )
@@ -363,6 +372,7 @@ def print_ool_breakdown(agg):
     print('  Nested under SUBMIT_OOL_WRITE (always sampled, including zeros)')
     print('  Remainder (seg_delayed - wait - roll - io) = record packing overhead')
     print('  io_queue + io_device ≈ io (children of …_io; do not add to wait/roll)')
+    print('  wait_roll + wait_full ≈ wait (why submitter was unavailable)')
     print('=' * 110)
     ool_count = agg['submit_ool_write']['count']
     ool_sum = agg['submit_ool_write']['sum']

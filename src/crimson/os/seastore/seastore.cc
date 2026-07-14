@@ -227,7 +227,11 @@
        sm::label_instance("stage", "submit_ool_write_seg_delayed")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_wait")},
-      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_roll")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_full")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_roll")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
@@ -1887,7 +1891,11 @@
                                pd.ool_write_seg_delayed);
       add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT,
                                pd.ool_write_seg_delayed_wait);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
+      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL,
+                             pd.ool_write_seg_delayed_wait_roll);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
+                             pd.ool_write_seg_delayed_wait_full);
+    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
                                pd.ool_write_seg_delayed_roll);
       add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
                                pd.ool_write_seg_delayed_io);

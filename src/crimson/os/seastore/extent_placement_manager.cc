@@ -109,12 +109,20 @@ SegmentedOolWriter::do_write(
     DEBUGT("{} extents={} wait ...",
            t, segment_allocator.get_name(),
            extents.size());
+    using unavailable_reason_t = journal::RecordSubmitter::unavailable_reason_t;
+    const auto reason = record_submitter.get_unavailable_reason();
     const auto wait_start = seastar::lowres_clock::now();
     return trans_intr::make_interruptible(
       record_submitter.wait_available()
-    ).si_then([this, &t, &extents, wait_start] {
-      t.get_phase_durations().ool_write_seg_delayed_wait +=
-        seastar::lowres_clock::now() - wait_start;
+    ).si_then([this, &t, &extents, wait_start, reason] {
+      const auto elapsed = seastar::lowres_clock::now() - wait_start;
+      auto& pd = t.get_phase_durations();
+      pd.ool_write_seg_delayed_wait += elapsed;
+      if (reason == unavailable_reason_t::ROLLING) {
+        pd.ool_write_seg_delayed_wait_roll += elapsed;
+      } else if (reason == unavailable_reason_t::FULL_FLUSH) {
+        pd.ool_write_seg_delayed_wait_full += elapsed;
+      }
       return do_write(t, extents);
     });
   }
