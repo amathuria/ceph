@@ -70,9 +70,27 @@ SegmentedOolWriter::write_record(
   return std::move(ret.future
   ).safe_then([this, FNAME, &t,
                record_base=ret.record_base_regardless_md,
-               io_start](record_locator_t ret) {
-    t.get_phase_durations().ool_write_seg_delayed_io +=
-      seastar::lowres_clock::now() - io_start;
+               io_start,
+               write_issued_at=std::move(ret.write_issued_at)
+              ](record_locator_t ret) {
+    const auto io_end = seastar::lowres_clock::now();
+    auto& pd = t.get_phase_durations();
+    pd.ool_write_seg_delayed_io += io_end - io_start;
+
+    // Split queue (batch/FULL deferral) vs device write. Clamp if the write
+    // was already issued before io_start (flush during submit()).
+    auto issued = io_end;
+    if (write_issued_at && write_issued_at->has_value()) {
+      issued = **write_issued_at;
+    }
+    if (issued < io_start) {
+      issued = io_start;
+    } else if (issued > io_end) {
+      issued = io_end;
+    }
+    pd.ool_write_seg_delayed_io_queue += issued - io_start;
+    pd.ool_write_seg_delayed_io_device += io_end - issued;
+
     TRACET("{} finish {}=={}",
            t, segment_allocator.get_name(), ret, record_base);
     // ool won't write metadata, so the paddrs must be equal

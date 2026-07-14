@@ -501,6 +501,8 @@ public:
     seastar::lowres_clock::duration ool_write_seg_delayed_wait{0}; // RecordSubmitter::wait_available
     seastar::lowres_clock::duration ool_write_seg_delayed_roll{0}; // RecordSubmitter::roll_segment
     seastar::lowres_clock::duration ool_write_seg_delayed_io{0};   // write_record futures
+    seastar::lowres_clock::duration ool_write_seg_delayed_io_queue{0};  // until device write issued
+    seastar::lowres_clock::duration ool_write_seg_delayed_io_device{0}; // write issued → complete
     // Random-block backend (RandomBlockOolWriter) — nested under ool_write:
     seastar::lowres_clock::duration ool_write_rbm{0};    // write_preallocated_ool_extents
     seastar::lowres_clock::duration ool_write_rbm_io{0}; // RBM::write device futures

@@ -37,7 +37,10 @@ RecordBatch::add_pending(
   assert(pending.size == new_size);
   if (state == state_t::EMPTY) {
     assert(!io_promise.has_value());
+    assert(!write_issued_at);
     io_promise = seastar::shared_promise<maybe_promise_result_t>();
+    write_issued_at = seastar::make_lw_shared<
+        std::optional<seastar::lowres_clock::time_point>>();
     assert(maybe_write_base.has_value());
     assert(!write_base.has_value());
     write_base = maybe_write_base;
@@ -45,6 +48,7 @@ RecordBatch::add_pending(
   state = state_t::PENDING;
   assert(write_base.has_value());
   assert(io_promise.has_value());
+  assert(write_issued_at);
 
   auto _write_base = *write_base;
   auto fut = io_promise->get_shared_future(
@@ -65,7 +69,7 @@ RecordBatch::add_pending(
       submit_result);
   });
   _write_base.offset = _write_base.offset.add_offset(dlength_offset);
-  return {_write_base, std::move(fut)};
+  return {_write_base, std::move(fut), write_issued_at};
 }
 
 RecordBatch::encode_ret_t RecordBatch::encode_batch(
@@ -110,6 +114,7 @@ void RecordBatch::set_result(
   submitting_mdlength = 0;
   io_promise->set_value(result);
   io_promise.reset();
+  write_issued_at = {};
 }
 
 ceph::bufferlist
@@ -320,6 +325,7 @@ RecordSubmitter::submit(
       needs_flush &&
       state != state_t::FULL) {
     // fast path with direct write
+    ++submit_fast;
     increment_io();
     auto block_size = journal_allocator.get_block_size();
     auto rg = record_group_t(std::move(record), block_size);
@@ -337,6 +343,9 @@ RecordSubmitter::submit(
     write_result_t result{
         journal_allocator.get_written_to(),
         to_write.length()};
+    auto write_issued_at = seastar::make_lw_shared<
+        std::optional<seastar::lowres_clock::time_point>>();
+    *write_issued_at = seastar::lowres_clock::now();
     auto write_fut = journal_allocator.write(std::move(to_write)
     ).safe_then([mdlength=sizes.get_mdlength(), result] {
       return record_locator_t{
@@ -346,7 +355,7 @@ RecordSubmitter::submit(
     }).finally([this] {
       decrement_io_with_flush();
     });
-    return {result.start_seq, std::move(write_fut)};
+    return {result.start_seq, std::move(write_fut), std::move(write_issued_at)};
   }
   // indirect batched write
   std::optional<journal_seq_t> maybe_write_base;
@@ -365,6 +374,7 @@ RecordSubmitter::submit(
   if (needs_flush) {
     if (state == state_t::FULL) {
       // #2 block concurrent submissions due to lack of resource
+      ++submit_full_blocked;
       DEBUG("{} added with {} pending, outstanding_io={}, unavailable, wait flush ...",
             get_name(),
             p_current_batch->get_num_records(),
@@ -386,11 +396,13 @@ RecordSubmitter::submit(
         });
       }
     } else {
+      ++submit_batched_flush;
       DEBUG("{} added pending, flush", get_name());
       flush_current_batch();
     }
   } else {
     // will flush later
+    ++submit_batched_deferred;
     DEBUG("{} added with {} pending, outstanding_io={}",
           get_name(),
           p_current_batch->get_num_records(),
@@ -409,6 +421,10 @@ RecordSubmitter::open(store_index_t store_index, bool is_mkfs)
     DEBUG("{} register metrics", get_name());
     stats = {};
     last_stats = {};
+    submit_fast = 0;
+    submit_batched_flush = 0;
+    submit_batched_deferred = 0;
+    submit_full_blocked = 0;
     namespace sm = seastar::metrics;
     std::vector<sm::label_instance> label_instances;
     label_instances.push_back(sm::label_instance("submitter", get_name()));
@@ -451,6 +467,30 @@ RecordSubmitter::open(store_index_t store_index, bool is_mkfs)
           "record_group_data_bytes",
           stats.data_bytes,
           sm::description("bytes of data when write record groups"),
+          label_instances
+        ),
+        sm::make_counter(
+          "submit_fast",
+          submit_fast,
+          sm::description("RecordSubmitter submits via direct (fast) write"),
+          label_instances
+        ),
+        sm::make_counter(
+          "submit_batched_flush",
+          submit_batched_flush,
+          sm::description("RecordSubmitter submits that flush the batch immediately"),
+          label_instances
+        ),
+        sm::make_counter(
+          "submit_batched_deferred",
+          submit_batched_deferred,
+          sm::description("RecordSubmitter submits parked in batch for later flush"),
+          label_instances
+        ),
+        sm::make_counter(
+          "submit_full_blocked",
+          submit_full_blocked,
+          sm::description("RecordSubmitter submits blocked because io-depth is FULL"),
           label_instances
         ),
       }
@@ -575,6 +615,7 @@ void RecordSubmitter::flush_current_batch()
         write_result_t{write_base, write_len},
         get_committed_to(), num_outstanding_io);
   assert(write_base == journal_allocator.get_written_to());
+  p_batch->mark_write_issued();
   std::ignore = journal_allocator.write(std::move(encode_ret.bl)
   ).safe_then([this, p_batch, FNAME, num, sizes, write_len] {
     TRACE("{} {} records, {}, write done",

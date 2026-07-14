@@ -5,8 +5,10 @@
 
 #include <optional>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/shared_future.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include "include/buffer.h"
 
@@ -144,6 +146,11 @@ public:
     pending.reserve(batch_capacity);
   }
 
+  // Shared across all waiters on this batch; filled when the device write
+  // is issued (flush_current_batch / fast-path submit).
+  using write_issued_ptr_t = seastar::lw_shared_ptr<
+      std::optional<seastar::lowres_clock::time_point>>;
+
   // Add to the batch, the future will be resolved after the batch is
   // written.
   //
@@ -155,12 +162,19 @@ public:
     // only useful in case of ool.
     journal_seq_t record_base_regardless_md;
     add_pending_fut future;
+    write_issued_ptr_t write_issued_at;
   };
   add_pending_ret_t add_pending(
       const std::string& name,
       record_t&&,
       extent_len_t block_size,
       std::optional<journal_seq_t> maybe_write_base);
+
+  void mark_write_issued() {
+    assert(write_issued_at);
+    assert(!write_issued_at->has_value());
+    *write_issued_at = seastar::lowres_clock::now();
+  }
 
   // Encode the batched records for write.
   struct encode_ret_t {
@@ -214,6 +228,8 @@ private:
   };
   using maybe_promise_result_t = std::optional<promise_result_t>;
   std::optional<seastar::shared_promise<maybe_promise_result_t> > io_promise;
+  // Valid while PENDING/SUBMITTING; shared with add_pending_ret_t waiters.
+  write_issued_ptr_t write_issued_at;
 };
 
 /**
@@ -344,6 +360,12 @@ private:
 
   writer_stats_t stats;
   mutable writer_stats_t last_stats;
+
+  // Path mix for RecordSubmitter::submit() (journal + OOL).
+  uint64_t submit_fast = 0;              // direct write (empty batch + flush)
+  uint64_t submit_batched_flush = 0;     // add_pending + flush now
+  uint64_t submit_batched_deferred = 0;  // add_pending, flush later
+  uint64_t submit_full_blocked = 0;      // needs_flush but io-depth FULL
 
   seastar::metrics::metric_group metrics;
 };
