@@ -504,7 +504,14 @@ public:
     seastar::lowres_clock::duration ool_write_seg_delayed_roll{0}; // RecordSubmitter::roll_segment
     seastar::lowres_clock::duration ool_write_seg_delayed_roll_flush{0}; // flush prep before roll
     seastar::lowres_clock::duration ool_write_seg_delayed_roll_close{0}; // close_segment
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_close_advance_wp{0};
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_close_write_tail{0};
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_close_seg_close{0};
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_close_provider{0};
     seastar::lowres_clock::duration ool_write_seg_delayed_roll_open{0};  // do_open (alloc+header)
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_open_alloc{0};
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_open_sm_open{0};
+    seastar::lowres_clock::duration ool_write_seg_delayed_roll_open_header{0};
     seastar::lowres_clock::duration ool_write_seg_delayed_io{0};   // write_record futures
     seastar::lowres_clock::duration ool_write_seg_delayed_io_queue{0};  // until device write issued
     seastar::lowres_clock::duration ool_write_seg_delayed_io_device{0}; // write issued → complete

@@ -243,8 +243,22 @@
      sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_flush")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
      sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_advance_wp")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_write_tail")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_seg_close")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_provider")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
      sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_alloc")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_sm_open")},
+    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
+     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_header")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
      sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
     {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
@@ -1920,8 +1934,29 @@
                              pd.ool_write_seg_delayed_roll_flush);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
                              pd.ool_write_seg_delayed_roll_close);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
+        pd.ool_write_seg_delayed_roll_close_advance_wp);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
+        pd.ool_write_seg_delayed_roll_close_write_tail);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
+        pd.ool_write_seg_delayed_roll_close_seg_close);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
+        pd.ool_write_seg_delayed_roll_close_provider);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
                              pd.ool_write_seg_delayed_roll_open);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
+        pd.ool_write_seg_delayed_roll_open_alloc);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
+        pd.ool_write_seg_delayed_roll_open_sm_open);
+    add_stage_latency_sample(
+        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
+        pd.ool_write_seg_delayed_roll_open_header);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
                              pd.ool_write_seg_delayed_io);
     add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,

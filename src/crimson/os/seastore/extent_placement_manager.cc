@@ -162,8 +162,22 @@ SegmentedOolWriter::do_write(
           pd.ool_write_seg_delayed_roll +=
             seastar::lowres_clock::now() - roll_start;
           pd.ool_write_seg_delayed_roll_flush += roll_timings->flush_prep;
-          pd.ool_write_seg_delayed_roll_close += roll_timings->close;
-          pd.ool_write_seg_delayed_roll_open += roll_timings->open;
+          pd.ool_write_seg_delayed_roll_close += roll_timings->parts.close;
+          pd.ool_write_seg_delayed_roll_close_advance_wp +=
+              roll_timings->parts.close_advance_wp;
+          pd.ool_write_seg_delayed_roll_close_write_tail +=
+              roll_timings->parts.close_write_tail;
+          pd.ool_write_seg_delayed_roll_close_seg_close +=
+              roll_timings->parts.close_seg_close;
+          pd.ool_write_seg_delayed_roll_close_provider +=
+              roll_timings->parts.close_provider;
+          pd.ool_write_seg_delayed_roll_open += roll_timings->parts.open;
+          pd.ool_write_seg_delayed_roll_open_alloc +=
+              roll_timings->parts.open_alloc;
+          pd.ool_write_seg_delayed_roll_open_sm_open +=
+              roll_timings->parts.open_sm_open;
+          pd.ool_write_seg_delayed_roll_open_header +=
+              roll_timings->parts.open_header;
           return std::move(fut_write);
         })
       ).si_then([this, &t, &extents] {

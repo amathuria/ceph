@@ -31,6 +31,15 @@ public:
   struct roll_parts_t {
     seastar::lowres_clock::duration close{0};
     seastar::lowres_clock::duration open{0};
+    // close_segment():
+    seastar::lowres_clock::duration close_advance_wp{0};
+    seastar::lowres_clock::duration close_write_tail{0};
+    seastar::lowres_clock::duration close_seg_close{0};
+    seastar::lowres_clock::duration close_provider{0};
+    // do_open():
+    seastar::lowres_clock::duration open_alloc{0};
+    seastar::lowres_clock::duration open_sm_open{0};
+    seastar::lowres_clock::duration open_header{0};
   };
 
   virtual ~JournalAllocator() = default;
@@ -316,8 +325,7 @@ public:
   // Optional out-param: flush_prep + allocator close/open breakdown.
   struct roll_timings_t {
     seastar::lowres_clock::duration flush_prep{0};
-    seastar::lowres_clock::duration close{0};
-    seastar::lowres_clock::duration open{0};
+    JournalAllocator::roll_parts_t parts;
   };
   roll_segment_ertr::future<> roll_segment(roll_timings_t* timings = nullptr);
 

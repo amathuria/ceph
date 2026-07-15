@@ -65,7 +65,14 @@ STAGES_ORDER = [
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_roll_flush',
     'submit_ool_write_seg_delayed_roll_close',
+    'submit_ool_write_seg_delayed_roll_close_advance_wp',
+    'submit_ool_write_seg_delayed_roll_close_write_tail',
+    'submit_ool_write_seg_delayed_roll_close_seg_close',
+    'submit_ool_write_seg_delayed_roll_close_provider',
     'submit_ool_write_seg_delayed_roll_open',
+    'submit_ool_write_seg_delayed_roll_open_alloc',
+    'submit_ool_write_seg_delayed_roll_open_sm_open',
+    'submit_ool_write_seg_delayed_roll_open_header',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_seg_delayed_io_device',
@@ -89,7 +96,14 @@ OOL_FOCUS_STAGES = [
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_roll_flush',
     'submit_ool_write_seg_delayed_roll_close',
+    'submit_ool_write_seg_delayed_roll_close_advance_wp',
+    'submit_ool_write_seg_delayed_roll_close_write_tail',
+    'submit_ool_write_seg_delayed_roll_close_seg_close',
+    'submit_ool_write_seg_delayed_roll_close_provider',
     'submit_ool_write_seg_delayed_roll_open',
+    'submit_ool_write_seg_delayed_roll_open_alloc',
+    'submit_ool_write_seg_delayed_roll_open_sm_open',
+    'submit_ool_write_seg_delayed_roll_open_header',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_seg_delayed_io_device',
@@ -109,7 +123,14 @@ OOL_SEG_SUB_PHASES = [
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_roll_flush',
     'submit_ool_write_seg_delayed_roll_close',
+    'submit_ool_write_seg_delayed_roll_close_advance_wp',
+    'submit_ool_write_seg_delayed_roll_close_write_tail',
+    'submit_ool_write_seg_delayed_roll_close_seg_close',
+    'submit_ool_write_seg_delayed_roll_close_provider',
     'submit_ool_write_seg_delayed_roll_open',
+    'submit_ool_write_seg_delayed_roll_open_alloc',
+    'submit_ool_write_seg_delayed_roll_open_sm_open',
+    'submit_ool_write_seg_delayed_roll_open_header',
     'submit_ool_write_seg_delayed_io',
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_seg_delayed_io_device',
@@ -131,7 +152,14 @@ OOL_OFTEN_ZERO_STAGES = (
     'submit_ool_write_seg_delayed_roll',
     'submit_ool_write_seg_delayed_roll_flush',
     'submit_ool_write_seg_delayed_roll_close',
+    'submit_ool_write_seg_delayed_roll_close_advance_wp',
+    'submit_ool_write_seg_delayed_roll_close_write_tail',
+    'submit_ool_write_seg_delayed_roll_close_seg_close',
+    'submit_ool_write_seg_delayed_roll_close_provider',
     'submit_ool_write_seg_delayed_roll_open',
+    'submit_ool_write_seg_delayed_roll_open_alloc',
+    'submit_ool_write_seg_delayed_roll_open_sm_open',
+    'submit_ool_write_seg_delayed_roll_open_header',
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_rbm',
     'submit_ool_write_rbm_io',
@@ -385,7 +413,9 @@ def print_ool_breakdown(agg):
     print('  Remainder (seg_delayed - wait - roll - io) = record packing overhead')
     print('  io_queue + io_device ≈ io (children of …_io; do not add to wait/roll)')
     print('  wait_roll + wait_full ≈ wait (why submitter was unavailable)')
-    print('  roll_flush + roll_close + roll_open ≈ roll (SegmentAllocator roll parts)')
+    print('  roll_flush + roll_close + roll_open ≈ roll')
+    print('  close_advance_wp + write_tail + seg_close + provider ≈ roll_close')
+    print('  open_alloc + open_sm_open + open_header ≈ roll_open')
     print('=' * 110)
     ool_count = agg['submit_ool_write']['count']
     ool_sum = agg['submit_ool_write']['sum']

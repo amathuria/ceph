@@ -298,9 +298,7 @@ RecordSubmitter::roll_segment(roll_timings_t* timings)
       // wait for background rolling
       return wait_available().finally([this, timings] {
         if (timings) {
-          auto parts = journal_allocator.get_last_roll_parts();
-          timings->close = parts.close;
-          timings->open = parts.open;
+          timings->parts = journal_allocator.get_last_roll_parts();
         }
       });
     }
