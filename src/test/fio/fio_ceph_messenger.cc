@@ -142,7 +142,6 @@ static void put_ceph_context(void)
 
     delete f;
     delete g_dummy_auth;
-    dout(0) <<  ostr.str() << dendl;
   }
 
   g_ceph_context->put();
