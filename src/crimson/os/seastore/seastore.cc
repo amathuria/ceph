@@ -228,48 +228,53 @@
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_wait")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_roll")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_full")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
-<<<<<<< HEAD
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_roll")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_wait_full")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_roll")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_flush")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_advance_wp")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_write_tail")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_seg_close")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_provider")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_alloc")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_sm_open")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_header")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
        sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
       {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
-=======
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_flush")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_advance_wp")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_write_tail")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_seg_close")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_close_provider")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_alloc")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_sm_open")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_roll_open_header")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_io")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
->>>>>>> 7add2d4dc76 (Investigate the roll phase in detail)
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_io_queue")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
-     sm::label_instance("stage", "submit_ool_write_seg_delayed_io_device")},
-    {txn_stage_t::SUBMIT_OOL_WRITE_RBM,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_io_queue")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
+       sm::label_instance("stage", "submit_ool_write_seg_delayed_io_device")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM,
        sm::label_instance("stage", "submit_ool_write_rbm")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_GATE,
+       sm::label_instance("stage", "submit_ool_write_rbm_gate")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_PREP,
+       sm::label_instance("stage", "submit_ool_write_rbm_prep")},
       {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO,
        sm::label_instance("stage", "submit_ool_write_rbm_io")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_QUEUE,
+       sm::label_instance("stage", "submit_ool_write_rbm_io_queue")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_DEVICE,
+       sm::label_instance("stage", "submit_ool_write_rbm_io_device")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_DMA,
+       sm::label_instance("stage", "submit_ool_write_rbm_io_dma")},
+      {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_REACTOR,
+       sm::label_instance("stage", "submit_ool_write_rbm_io_reactor")},
       {txn_stage_t::SUBMIT_LBA_UPDATE,     sm::label_instance("stage", "submit_lba_update")},
       {txn_stage_t::SUBMIT_PREPARE_ENTER,  sm::label_instance("stage", "submit_prepare_enter")},
       {txn_stage_t::SUBMIT_PREPARE_RECORD, sm::label_instance("stage", "submit_prepare_record")},
@@ -1885,9 +1890,10 @@
       auto total_ms = std::chrono::duration_cast<
         std::chrono::duration<double, std::milli>>(total).count();
 
-      const std::array<
-        std::pair<txn_stage_t, seastar::lowres_clock::duration>, STAGE_MAX>
-        stage_samples = {{
+      // Explicit list (not STAGE_MAX-sized) so zero-filled slots do not
+      // re-sample COLLOCK_WAIT.
+      const std::pair<txn_stage_t, seastar::lowres_clock::duration>
+        stage_samples[] = {
           {txn_stage_t::COLLOCK_WAIT,          collock_wait},
           {txn_stage_t::COLLOCK_HOLD,          ctx.transaction->get_handle().get_lock_hold_time()},
           {txn_stage_t::THROTTLER_WAIT,        throttler_wait},
@@ -1896,11 +1902,55 @@
           {txn_stage_t::SUBMIT_TOTAL,          ctx.submit_time},
           {txn_stage_t::SUBMIT_RESERVE,        pd.reserve},
           {txn_stage_t::SUBMIT_OOL_WRITE,      pd.ool_write},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED,
+           pd.ool_write_seg_delayed},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT,
+           pd.ool_write_seg_delayed_wait},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL,
+           pd.ool_write_seg_delayed_wait_roll},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
+           pd.ool_write_seg_delayed_wait_full},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
+           pd.ool_write_seg_delayed_roll},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
+           pd.ool_write_seg_delayed_roll_flush},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
+           pd.ool_write_seg_delayed_roll_close},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
+           pd.ool_write_seg_delayed_roll_close_advance_wp},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
+           pd.ool_write_seg_delayed_roll_close_write_tail},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
+           pd.ool_write_seg_delayed_roll_close_seg_close},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
+           pd.ool_write_seg_delayed_roll_close_provider},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
+           pd.ool_write_seg_delayed_roll_open},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
+           pd.ool_write_seg_delayed_roll_open_alloc},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
+           pd.ool_write_seg_delayed_roll_open_sm_open},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
+           pd.ool_write_seg_delayed_roll_open_header},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
+           pd.ool_write_seg_delayed_io},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
+           pd.ool_write_seg_delayed_io_queue},
+          {txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
+           pd.ool_write_seg_delayed_io_device},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM, pd.ool_write_rbm},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_GATE, pd.ool_write_rbm_gate},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_PREP, pd.ool_write_rbm_prep},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO, pd.ool_write_rbm_io},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_QUEUE, pd.ool_write_rbm_io_queue},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_DEVICE, pd.ool_write_rbm_io_device},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_DMA, pd.ool_write_rbm_io_dma},
+          {txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO_REACTOR, pd.ool_write_rbm_io_reactor},
           {txn_stage_t::SUBMIT_LBA_UPDATE,     pd.lba_update},
           {txn_stage_t::SUBMIT_PREPARE_ENTER,  pd.prepare_enter},
           {txn_stage_t::SUBMIT_PREPARE_RECORD, pd.prepare_record},
           {txn_stage_t::SUBMIT_JOURNAL,        pd.journal},
-        }};
+        };
 
       for (auto& [stage, dur] : stage_samples) {
         add_stage_latency_sample(stats.stage_lat, stage, dur);
@@ -1912,67 +1962,7 @@
         }
       }
       add_latency_sample(op_type_t::DO_TRANSACTION, total);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_RESERVE, pd.reserve);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE, pd.ool_write);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED,
-                               pd.ool_write_seg_delayed);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT,
-                               pd.ool_write_seg_delayed_wait);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_ROLL,
-                             pd.ool_write_seg_delayed_wait_roll);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_WAIT_FULL,
-                             pd.ool_write_seg_delayed_wait_full);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL,
-<<<<<<< HEAD
-                               pd.ool_write_seg_delayed_roll);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
-                               pd.ool_write_seg_delayed_io);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
-=======
-                             pd.ool_write_seg_delayed_roll);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_FLUSH,
-                             pd.ool_write_seg_delayed_roll_flush);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE,
-                             pd.ool_write_seg_delayed_roll_close);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_ADVANCE_WP,
-        pd.ool_write_seg_delayed_roll_close_advance_wp);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_WRITE_TAIL,
-        pd.ool_write_seg_delayed_roll_close_write_tail);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_SEG_CLOSE,
-        pd.ool_write_seg_delayed_roll_close_seg_close);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_CLOSE_PROVIDER,
-        pd.ool_write_seg_delayed_roll_close_provider);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN,
-                             pd.ool_write_seg_delayed_roll_open);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_ALLOC,
-        pd.ool_write_seg_delayed_roll_open_alloc);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_SM_OPEN,
-        pd.ool_write_seg_delayed_roll_open_sm_open);
-    add_stage_latency_sample(
-        txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL_OPEN_HEADER,
-        pd.ool_write_seg_delayed_roll_open_header);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO,
-                             pd.ool_write_seg_delayed_io);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_QUEUE,
->>>>>>> 7add2d4dc76 (Investigate the roll phase in detail)
-                             pd.ool_write_seg_delayed_io_queue);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_SEG_DELAYED_IO_DEVICE,
-                             pd.ool_write_seg_delayed_io_device);
-    add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_RBM,
-                               pd.ool_write_rbm);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_OOL_WRITE_RBM_IO,
-                               pd.ool_write_rbm_io);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_LBA_UPDATE, pd.lba_update);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_PREPARE_ENTER, pd.prepare_enter);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_PREPARE_RECORD, pd.prepare_record);
-      add_stage_latency_sample(txn_stage_t::SUBMIT_JOURNAL, pd.journal);
-  }
+    }
 
   add_onode_tree_sample(ctx.transaction->get_onode_tree_stats());
 

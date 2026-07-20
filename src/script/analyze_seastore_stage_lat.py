@@ -31,7 +31,13 @@
 #         SUBMIT_OOL_WRITE_SEG_DELAYED_ROLL
 #         SUBMIT_OOL_WRITE_SEG_DELAYED_IO
 #       SUBMIT_OOL_WRITE_RBM
+#         SUBMIT_OOL_WRITE_RBM_GATE
+#         SUBMIT_OOL_WRITE_RBM_PREP
 #         SUBMIT_OOL_WRITE_RBM_IO
+#           SUBMIT_OOL_WRITE_RBM_IO_QUEUE
+#           SUBMIT_OOL_WRITE_RBM_IO_DEVICE
+#             SUBMIT_OOL_WRITE_RBM_IO_DMA
+#             SUBMIT_OOL_WRITE_RBM_IO_REACTOR
 #
 #   This is NOT the same as "OOL when total latency is high" — histograms
 #   are per-stage marginals, not joint. For that, use seastore_slow_transaction_
@@ -44,14 +50,16 @@ import json
 import sys
 from collections import defaultdict
 
-# Must match SeaStore::Shard::STAGE_LAT_BUCKETS_US in seastore.h
-BUCKET_BOUNDS_US = [
-    250, 500, 1000, 1500, 2000, 3000, 5000, 7500, 10000,
-    15000, 20000, 30000, 50000, 100000,
+# Must match SeaStore::Shard::STAGE_LAT_BUCKETS_MS in seastore.h
+# (main switched stage histograms from microseconds to milliseconds).
+BUCKET_BOUNDS_MS = [
+    1, 1.5, 2, 3, 5, 7.5,
+    10, 15, 20, 30, 50, 100,
 ]
 
 STAGES_ORDER = [
     'collock_wait',
+    'collock_hold',
     'throttler_wait',
     'build',
     'build_get_onode',
@@ -77,7 +85,13 @@ STAGES_ORDER = [
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_seg_delayed_io_device',
     'submit_ool_write_rbm',
+    'submit_ool_write_rbm_gate',
+    'submit_ool_write_rbm_prep',
     'submit_ool_write_rbm_io',
+    'submit_ool_write_rbm_io_queue',
+    'submit_ool_write_rbm_io_device',
+    'submit_ool_write_rbm_io_dma',
+    'submit_ool_write_rbm_io_reactor',
     'submit_lba_update',
     'submit_prepare_enter',
     'submit_prepare_record',
@@ -108,7 +122,13 @@ OOL_FOCUS_STAGES = [
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_seg_delayed_io_device',
     'submit_ool_write_rbm',
+    'submit_ool_write_rbm_gate',
+    'submit_ool_write_rbm_prep',
     'submit_ool_write_rbm_io',
+    'submit_ool_write_rbm_io_queue',
+    'submit_ool_write_rbm_io_device',
+    'submit_ool_write_rbm_io_dma',
+    'submit_ool_write_rbm_io_reactor',
     'submit_journal',
     'submit_total',
     'collock_wait',
@@ -138,7 +158,13 @@ OOL_SEG_SUB_PHASES = [
 
 OOL_RBM_SUB_PHASES = [
     'submit_ool_write_rbm',
+    'submit_ool_write_rbm_gate',
+    'submit_ool_write_rbm_prep',
     'submit_ool_write_rbm_io',
+    'submit_ool_write_rbm_io_queue',
+    'submit_ool_write_rbm_io_device',
+    'submit_ool_write_rbm_io_dma',
+    'submit_ool_write_rbm_io_reactor',
 ]
 
 OOL_SUB_PHASES = OOL_SEG_SUB_PHASES + OOL_RBM_SUB_PHASES
@@ -162,7 +188,9 @@ OOL_OFTEN_ZERO_STAGES = (
     'submit_ool_write_seg_delayed_roll_open_header',
     'submit_ool_write_seg_delayed_io_queue',
     'submit_ool_write_rbm',
-    'submit_ool_write_rbm_io',
+    'submit_ool_write_rbm_gate',
+    'submit_ool_write_rbm_io_queue',
+    'submit_ool_write_rbm_io_reactor',
 )
 
 SUBMIT_SUB_PHASES = [
@@ -181,21 +209,28 @@ def load_metrics(path):
     return data.get('metrics', [])
 
 
-def parse_histogram_entries(metrics):
-    """Return list of dicts: stage, shard, sum, count, buckets {le: count}."""
+def parse_histogram_entries(metrics, tail='all'):
+    """Return list of dicts: stage, shard, sum, count, buckets {le: count}.
+
+    Histograms are in milliseconds. Main exposes tail=all|slow|very_slow;
+    default is all transactions.
+    """
     entries = []
     for entry in metrics:
         m = entry.get('seastore_do_transaction_stage_lat')
         if not m:
             continue
+        if m.get('tail', 'all') != tail:
+            continue
         buckets = {}
         for b in m['value']['buckets']:
             if b['le'] != '+Inf':
-                buckets[b['le']] = b['count']
+                buckets[float(b['le'])] = b['count']
         entries.append({
             'stage': m['stage'],
             'shard': int(m['shard']),
             'shard_store_index': int(m.get('shard_store_index', 0)),
+            'tail': m.get('tail', 'all'),
             'sum': m['value']['sum'],
             'count': m['value']['count'],
             'buckets': buckets,
@@ -215,13 +250,13 @@ def aggregate_by_stage(entries):
 
 
 def percentile_exclusive(buckets, total_count, p):
-    """Approximate percentile from exclusive-bucket histogram."""
+    """Approximate percentile from exclusive-bucket histogram (ms)."""
     if total_count <= 0:
         return 0.0
     target = total_count * float(p) / 100.0
     cum = 0
-    prev = 0
-    for le in BUCKET_BOUNDS_US:
+    prev = 0.0
+    for le in BUCKET_BOUNDS_MS:
         cnt = buckets.get(le, 0)
         cum += cnt
         if cum >= target:
@@ -229,13 +264,13 @@ def percentile_exclusive(buckets, total_count, p):
             frac = (target - (cum - cnt)) / in_bucket
             return prev + frac * (le - prev)
         prev = le
-    return float(BUCKET_BOUNDS_US[-1])
+    return float(BUCKET_BOUNDS_MS[-1])
 
 
-def tail_fraction(buckets, total_count, threshold_us):
+def tail_fraction(buckets, total_count, threshold_ms):
     if total_count <= 0:
         return 0.0
-    below = sum(cnt for le, cnt in buckets.items() if le <= threshold_us)
+    below = sum(cnt for le, cnt in buckets.items() if le <= threshold_ms)
     return 100.0 * (total_count - below) / total_count
 
 
@@ -248,10 +283,10 @@ def stage_stats(agg_entry):
     return {
         'count': c,
         'sum': agg_entry['sum'],
-        'avg_us': avg,
-        'p50_us': percentile_exclusive(bm, c, 50),
-        'p90_us': percentile_exclusive(bm, c, 90),
-        'p99_us': percentile_exclusive(bm, c, 99),
+        'avg_us': avg * 1000.0,  # keep *_us keys; values are ms*1000 for format_us
+        'p50_us': percentile_exclusive(bm, c, 50) * 1000.0,
+        'p90_us': percentile_exclusive(bm, c, 90) * 1000.0,
+        'p99_us': percentile_exclusive(bm, c, 99) * 1000.0,
         'buckets': dict(bm),
     }
 
@@ -284,6 +319,11 @@ def format_us(us):
     if us >= 1000:
         return '{:.2f} ms'.format(us / 1000.0)
     return '{:.0f} us'.format(us)
+
+
+def format_ms(ms):
+    """Format a millisecond histogram value for display."""
+    return format_us(ms * 1000.0)
 
 
 def print_summary_table(agg, title, stages=None):
@@ -328,7 +368,7 @@ def print_time_share_bars(agg):
         pct = 100.0 * s['sum'] / total_wall if total_wall else 0
         bar = '#' * max(1, int(pct / 2)) if pct >= 0.5 else ''
         print('{:22} {:>12.2f}s  ({:5.1f}%)  {}'.format(
-            stage, s['sum'] / 1e6, pct, bar))
+            stage, s['sum'] / 1e3, pct, bar))
 
 
 def print_bucket_distribution(stage, agg_entry, title=None):
@@ -350,11 +390,11 @@ def print_bucket_distribution(stage, agg_entry, title=None):
     ))
     print()
     prev = 0
-    for hi in BUCKET_BOUNDS_US:
+    for hi in BUCKET_BOUNDS_MS:
         cnt = bm.get(hi, 0)
         pct = 100.0 * cnt / c if c else 0
         bar = '#' * max(1, int(pct / 2)) if pct >= 0.5 else ''
-        print('  ({:>6} - {:>6}] us: {:>8,}  ({:5.1f}%)  {}'.format(
+        print('  ({:>6} - {:>6}] ms: {:>8,}  ({:5.1f}%)  {}'.format(
             prev, hi, cnt, pct, bar))
         prev = hi
 
@@ -376,9 +416,9 @@ def print_per_shard(entries, stage):
         print('{:>6} {:>10,} {:>10} {:>10} {:>10}'.format(
             e['shard'],
             c,
-            format_us(e['sum'] / float(c)),
-            format_us(percentile_exclusive(e['buckets'], c, 50)),
-            format_us(percentile_exclusive(e['buckets'], c, 99)),
+            format_ms(e['sum'] / float(c)),
+            format_ms(percentile_exclusive(e['buckets'], c, 50)),
+            format_ms(percentile_exclusive(e['buckets'], c, 99)),
         ))
 
 
@@ -395,11 +435,11 @@ def print_submit_breakdown(agg):
     for s, avg in parts:
         pct = 100.0 * avg / total_parts if total_parts else 0
         print('  {:25} {:>10}  ({:5.1f}% of submit sub-phases)'.format(
-            s, format_us(avg), pct))
+            s, format_ms(avg), pct))
     if 'submit_total' in agg and agg['submit_total']['count']:
         st_avg = agg['submit_total']['sum'] / float(agg['submit_total']['count'])
         print('  {:25} {:>10}  (measured submit_total)'.format(
-            'submit_total', format_us(st_avg)))
+            'submit_total', format_ms(st_avg)))
 
 
 def print_ool_breakdown(agg):
@@ -421,7 +461,7 @@ def print_ool_breakdown(agg):
     ool_sum = agg['submit_ool_write']['sum']
     ool_avg = ool_sum / float(ool_count) if ool_count else 0
     print('  {:40} {:>10}  (total submit_ool_write)'.format(
-        'submit_ool_write', format_us(ool_avg)))
+        'submit_ool_write', format_ms(ool_avg)))
 
     def print_sub_phase_group(title, stages):
         print()
@@ -445,9 +485,9 @@ def print_ool_breakdown(agg):
             print('{:40} {:>10,} {:>10} {:>10} {:>10} {:>7.1f}x  ({:.0f}% of OOL avg){}'.format(
                 stage,
                 c,
-                format_us(avg_per_tx),
-                format_us(p50),
-                format_us(p99),
+                format_ms(avg_per_tx),
+                format_ms(p50),
+                format_ms(p99),
                 ratio,
                 pct_of_ool,
                 note,
@@ -480,11 +520,11 @@ def print_percentile_ladder(agg, stages=None):
         ratio = pts[99] / pts[50] if pts[50] > 0 else 0
         print('{:40} {:>10} {:>10} {:>10} {:>10} {:>10} {:>7.1f}x'.format(
             stage,
-            format_us(pts[50]),
-            format_us(pts[75]),
-            format_us(pts[90]),
-            format_us(pts[95]),
-            format_us(pts[99]),
+            format_ms(pts[50]),
+            format_ms(pts[75]),
+            format_ms(pts[90]),
+            format_ms(pts[95]),
+            format_ms(pts[99]),
             ratio,
         ))
 
@@ -504,11 +544,11 @@ def print_ool_tail_verdict(agg):
     print('=' * 96)
     print('OOL WRITE TAIL CHECK (submit_ool_write)')
     print('=' * 96)
-    print('  p50 OOL:  {}'.format(format_us(p50)))
+    print('  p50 OOL:  {}'.format(format_ms(p50)))
     print('  p95 OOL:  {}  ({:.1f}x p50)'.format(
-        format_us(p95), p95 / p50 if p50 else 0))
+        format_ms(p95), p95 / p50 if p50 else 0))
     print('  p99 OOL:  {}  ({:.1f}x p50)'.format(
-        format_us(p99), p99 / p50 if p50 else 0))
+        format_ms(p99), p99 / p50 if p50 else 0))
     print('  avg OOL:  {}'.format(format_us(ool['avg_us'])))
     print()
     print('  How to read this:')
@@ -544,7 +584,7 @@ def print_ool_tail_verdict(agg):
             elif stage in OOL_SUB_PHASES:
                 marker = ' <-- OOL sub'
             print('    {:40} {:5.1f}x  (p50={}, p99={}){}'.format(
-                stage, ratio, format_us(p50v), format_us(p99v), marker))
+                stage, ratio, format_ms(p50v), format_ms(p99v), marker))
 
 
 def print_insights(agg, entries):
@@ -555,8 +595,8 @@ def print_insights(agg, entries):
         print('=' * 96)
         print('collock_wait tail (fraction of transactions waiting longer than)')
         print('=' * 96)
-        for t in [1000, 5000, 10000, 50000, 100000]:
-            print('  >{:>5} us: {:5.2f}%'.format(t, tail_fraction(bm, c_collock, t)))
+        for t in [1, 5, 10, 50, 100]:
+            print('  >{:>5} ms: {:5.2f}%'.format(t, tail_fraction(bm, c_collock, t)))
 
     if all(s in agg for s in ('collock_wait', 'build', 'submit_total', 'submit_ool_write')):
         n = agg['submit_total']['count']
@@ -568,7 +608,7 @@ def print_insights(agg, entries):
             submit_avg = agg['submit_total']['sum'] / float(n)
             print()
             print('Rough end-to-end (collock + build + submit): {} per tx'.format(
-                format_us(e2e)))
+                format_ms(e2e)))
             print('  OOL as % of submit_total avg: {:.1f}%'.format(
                 100.0 * ool_avg / submit_avg if submit_avg else 0))
             print('  OOL as % of end-to-end avg: {:.1f}%'.format(
@@ -620,6 +660,9 @@ def main():
                         help='Metrics snapshot after benchmark (for diff mode)')
     parser.add_argument('--stage', metavar='NAME',
                         help='Focus on one stage (e.g. submit_ool_write)')
+    parser.add_argument('--tail', metavar='NAME', default='all',
+                        choices=['all', 'slow', 'very_slow'],
+                        help='Which tail tier to analyze (default: all)')
     parser.add_argument('--json', action='store_true',
                         help='Emit machine-readable JSON summary on stdout')
     args = parser.parse_args()
@@ -629,8 +672,8 @@ def main():
             parser.error('diff mode requires both --before and --after')
         if args.snapshot:
             parser.error('do not pass a positional snapshot with --before/--after')
-        before_entries = parse_histogram_entries(load_metrics(args.before))
-        after_entries = parse_histogram_entries(load_metrics(args.after))
+        before_entries = parse_histogram_entries(load_metrics(args.before), args.tail)
+        after_entries = parse_histogram_entries(load_metrics(args.after), args.tail)
         before_agg = aggregate_by_stage(before_entries)
         after_agg = aggregate_by_stage(after_entries)
         diff_agg_map = diff_agg(before_agg, after_agg)
@@ -655,7 +698,7 @@ def main():
         parser.print_help()
         return 2
 
-    entries = parse_histogram_entries(load_metrics(args.snapshot))
+    entries = parse_histogram_entries(load_metrics(args.snapshot), args.tail)
     agg = aggregate_by_stage(entries)
     if args.json:
         print(json.dumps(build_json_report(agg, entries, args.snapshot), indent=2))
