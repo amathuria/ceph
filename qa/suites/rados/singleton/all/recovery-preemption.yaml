@@ -52,7 +52,10 @@ tasks:
     osd.0:
       - rados -p foo bench 3 write -b 4096 --no-cleanup
       - ceph osd unset noup
-      - sleep 10
+      # osd.1 was restarted while noup was set, so it is still mounting.
+      # Wait until it is up before ceph daemon config set: that command
+      # takes osd_lock, which OSD::init holds until mount() returns.
+      - ok=0; for i in $(seq 1 60); do if ceph osd dump | grep -q '^osd\.1 up'; then ok=1; break; fi; sleep 10; done; test "$ok" = 1
       - for f in 0 1 2 3 ; do sudo ceph daemon osd.$f config set osd_recovery_sleep 0 ; sudo ceph daemon osd.$f config set osd_recovery_max_active 20 ; done
 - ceph.healthy:
 - exec:
